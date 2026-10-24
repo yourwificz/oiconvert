@@ -96,6 +96,7 @@ Options (excerpt):
 - Survey results (measured heatmaps / AP placements)
 
 ### Known importer quirks (observed)
+- In a Hamina import test, channel widths differed from the OI input even with simulated AP auto-channel assignment disabled. A subsequent Hamina export used the same standard `channel_width` strings. Project-level width settings are a suspected override; inspect both project and AP settings after import. Exact width round-trip preservation is not yet confirmed.
 - AP pins/BOM may not appear if the AP model is **unknown** to a tool’s catalog
 - Coordinate order can matter: **pixels → meters → feet**
 - Pixel dimension `height` is **ceiling height in pixels**, not the image’s pixel height
@@ -134,4 +135,4 @@ The reporter's original ESX is unavailable. Wall-free conversion, coverage areas
 /usr/bin/python3 /abs/path/esx2oi.py   --esx "/abs/path/in.esx"   --out "/abs/path/out.zip"   --prefix "[Imported] "   --fallback-manufacturer "ubiquiti"   --fallback-model "uap-ac-pro"
 ```
 
-AP model preservation is covered by synthetic regression fixtures. The maintainer confirmed successful Hamina model recognition with synthetic and real-project samples. Planned radio channels, widths, height and color have schema/regression coverage but still require a separate live Hamina import check.
+AP model preservation is covered by synthetic regression fixtures. The maintainer confirmed successful Hamina model recognition with synthetic and real-project samples. Planned radio channels, widths, height and color have schema/regression coverage. A private Hamina export retained AP colors, heights and channel numbers; channel widths differed from the input and require further verification.
