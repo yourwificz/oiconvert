@@ -391,6 +391,61 @@ def build_planned_radios(source, identity=("", ""), chain_map=None, antenna_type
     return sorted(output, key=lambda r: r["id"])
 
 
+def build_antennas(source, antenna_types):
+    """Map known integrated identities; preserve unresolved source frames separately."""
+    output, configurations = [], []
+    bands = {"TWO": "FREQ_2.4GHZ", "FIVE": "FREQ_5GHZ", "SIX": "FREQ_6GHZ"}
+    for index, radio in enumerate(source):
+        parameters = {k: radio[k] for k in ("antennaTypeId", "antennaMounting",
+                      "antennaDirection", "antennaTilt", "antennaHeight") if k in radio}
+        if not parameters:
+            continue
+        slot = radio.get("accessPointIndex", index)
+        antenna = (antenna_types or {}).get(radio.get("antennaTypeId"))
+        record = {"radio_id": slot, "parameters": parameters}
+        if antenna:
+            # Names/patterns/mounting defaults are source data, not OI catalog aliases.
+            record["antenna_type"] = {k: v for k, v in antenna.items()
+                                      if k not in ("id", "status")}
+        configurations.append(record)
+        if not antenna:
+            continue
+        # apVendor describes the AP vendor, not necessarily an external antenna's
+        # manufacturer. Only integrated antennas can safely use that identity.
+        if antenna.get("apCoupling") != "INTERNAL_ANTENNA":
+            info("External/unknown antenna coupling: preserving source data without inferred vendor")
+            continue
+        vendor, model = antenna.get("apVendor"), antenna.get("name")
+        band = bands.get(antenna.get("frequencyBand"))
+        if not all(isinstance(v, str) and v.strip() for v in (vendor, model)) or not band:
+            info("Incomplete antenna identity/band: preserving source data only")
+            continue
+        frequencies = radio.get("channelByCenterFrequencyDefinedNarrowChannels") or []
+        if frequencies and any(frequency_to_band_channel(f)[0] != band for f in frequencies):
+            die("Referenced antenna band does not match planned radio band")
+        band_out = {"band": band}
+        if "maxGain" in antenna:
+            gain = antenna["maxGain"]
+            if type(gain) not in (int, float) or not math.isfinite(gain):
+                die("Invalid antenna gain")
+            band_out["gain"] = gain
+        mapped = {"vendor": vendor, "model": model, "bands": [band_out]}
+        if "directional" in antenna:
+            if type(antenna["directional"]) is not bool:
+                die("Invalid antenna directional flag")
+            mapped["antenna_type"] = "DIRECTIONAL" if antenna["directional"] else "OMNIDIRECTIONAL"
+        # OI has no standard radio-to-antenna reference. Band association is
+        # standard; this namespaced extension retains the source slot explicitly.
+        mapped["oiconvert_source"] = {"radio_id": slot}
+        output.append((slot, mapped))
+    try:
+        json.dumps(configurations, allow_nan=False)
+    except (ValueError, TypeError):
+        die("Invalid non-JSON antenna source metadata")
+    return ([a for _, a in sorted(output, key=lambda pair: pair[0])],
+            sorted(configurations, key=lambda r: r["radio_id"]))
+
+
 def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, floor_dims_by_name, fallback_vendor, fallback_model, force_fallback=False, esx_radios=None, chain_map=None, antenna_types=None):
     planned = {}
     ap_ids = {ap.get("id") for ap in esx_aps or []}
@@ -451,6 +506,7 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
 
         # Power conversion follows the source model, even when identity fallback is forced.
         radios = build_planned_radios(source_radios, (v_orig, m_orig), chain_map, antenna_types)
+        antennas, antenna_source = build_antennas(source_radios, antenna_types)
         color = ap.get("color") or "#4687f0"
         if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
             die("Invalid AP display color")
@@ -465,6 +521,10 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
             "manufacturer_original": v_orig,
             "model_original": m_orig,
         }
+        if antennas:
+            ap_out["antennas"] = antennas
+        if antenna_source:
+            ap_out["oiconvert_source"] = {"version": 1, "antenna_configurations": antenna_source}
         if not radios:
             del ap_out["dot11_radios"]
         # Unplaced/measured APs need not have a location. OI 2.0.2 allows

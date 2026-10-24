@@ -238,6 +238,71 @@ class ConversionTests(unittest.TestCase):
         path.write_text(json.dumps(entries))
         return str(path)
 
+    def add_antenna_fixture(self):
+        radios = self.add_planned_ap()
+        types = []
+        for index, (radio, band) in enumerate(zip(radios, ["TWO", "FIVE", "SIX"])):
+            radio.update(antennaTypeId=f"antenna-{index}", antennaMounting="WALL",
+                         antennaDirection=90.0, antennaTilt=44.0)
+            types.append({"id": f"antenna-{index}", "name": f"Source antenna {index}",
+                          "apVendor": "Example", "apModel": "Model",
+                          "frequencyBand": band, "apCoupling": "INTERNAL_ANTENNA",
+                          "directional": index == 1, "maxGain": 4.5 + index,
+                          "defaultMounting": "CEILING", "defaultTiltAngle": 0.0,
+                          "hplane": {"alignmentAngle": 0, "gains": [
+                              {"angle": 0, "gain": -2.0}, {"angle": 180, "gain": 4.5}]},
+                          "status": "CREATED"})
+        self.files["antennaTypes.json"] = {"antennaTypes": types}
+        return types
+
+    def test_integrated_antenna_identity_gain_and_raw_orientation(self):
+        types = self.add_antenna_fixture()
+        ap = self.convert()["accesspoints"][0]
+        self.assertNotIn("orientation", ap)
+        for index, (antenna, band) in enumerate(zip(ap["antennas"],
+                                                    ["FREQ_2.4GHZ", "FREQ_5GHZ", "FREQ_6GHZ"])):
+            self.assertEqual(antenna, {
+                "vendor": "Example", "model": f"Source antenna {index}",
+                "bands": [{"band": band, "gain": 4.5 + index}],
+                "antenna_type": "DIRECTIONAL" if index == 1 else "OMNIDIRECTIONAL",
+                "oiconvert_source": {"radio_id": index},
+            })
+            raw = ap["oiconvert_source"]["antenna_configurations"][index]
+            self.assertEqual(raw["parameters"]["antennaTilt"], 44.0)
+            self.assertEqual(raw["parameters"]["antennaMounting"], "WALL")
+            self.assertEqual(raw["parameters"]["antennaDirection"], 90.0)
+            self.assertEqual(raw["antenna_type"], {k: v for k, v in types[index].items()
+                                                  if k not in ("id", "status")})
+        self.assertNotIn("oiconvert_source", self.convert()["accesspoints"][1])
+
+    def test_external_antenna_vendor_is_not_inferred_from_ap_vendor(self):
+        for antenna in self.add_antenna_fixture():
+            antenna["apCoupling"] = "EXTERNAL_ANTENNA"
+        ap = self.convert()["accesspoints"][0]
+        self.assertNotIn("antennas", ap)
+        self.assertEqual(len(ap["oiconvert_source"]["antenna_configurations"]), 3)
+
+    def test_unresolved_antenna_identity_is_preserved_without_invention(self):
+        types = self.add_antenna_fixture()
+        types[0].pop("apVendor")
+        types[1]["status"] = "DELETED"
+        ap = self.convert()["accesspoints"][0]
+        self.assertEqual(len(ap["antennas"]), 1)
+        source = ap["oiconvert_source"]["antenna_configurations"]
+        self.assertEqual(len(source), 3)
+        self.assertNotIn("antenna_type", source[1])
+        self.assertEqual(source[1]["parameters"]["antennaTypeId"], "antenna-1")
+
+    def test_antenna_band_must_match_referencing_radio(self):
+        self.add_antenna_fixture()[0]["frequencyBand"] = "FIVE"
+        self.assertIn("antenna band", self.convert(success=False).stderr)
+
+    def test_invalid_antenna_directionality_and_nonfinite_patterns_are_rejected(self):
+        self.add_antenna_fixture()[0]["directional"] = "false"
+        self.assertIn("directional flag", self.convert(success=False).stderr)
+        self.add_antenna_fixture()[0]["hplane"]["gains"][0]["gain"] = float("nan")
+        self.assertIn("non-JSON", self.convert(success=False).stderr)
+
     def test_total_to_per_chain_power_uses_explicit_chain_map(self):
         radios = self.add_planned_ap()
         radios[0]["transmitPower"] = 20

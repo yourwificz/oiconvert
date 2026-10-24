@@ -63,8 +63,9 @@ Options (excerpt):
   - AP hex display colors are preserved; absent colors retain the existing default
   - Planned total conducted power is converted to integer per-chain dBm when an explicit RF-chain map is supplied; spatial streams are not used as RF-chain counts
   - Integrated antenna gain can supply standard `transmit_eirp`; external antenna EIRP is omitted because cable losses are unknown
-  - Orientation remains unmapped
-  - No invented antenna object: AP models are not antenna model identifiers
+  - Standard OI orientation remains unmapped; raw source values are retained separately
+  - Referenced integrated antenna definitions export their source vendor/name, band, gain and directional type; AP model names are not reused as antenna identities
+  - Source mounting, azimuth, tilt, defaults and patterns are preserved in an explicitly nonstandard `oiconvert_source` extension; they are not converted to OI orientation
 - **Coverage areas**
   - `areas.json` and `exclusionAreas.json` become inclusion/exclusion polygons
   - Polygon coordinates use pixels with the same Y flip as walls and APs
@@ -79,7 +80,7 @@ Options (excerpt):
 - **AP mounting type**
   - No standard AP mounting field exists in the pinned OI 2.0.2 schema; importer model defaults may apply. Set post-import if needed.
 - **AP tilt/azimuth**
-  - Not exported yet: source and destination orientation conventions need validation; set post-import if needed.
+  - Preserved as raw source metadata only: mounting-dependent source frames and OI orientation conventions still require validation. A source tilt is not automatically an OI pitch.
 
 ### Planned radio caveats
 - ESX occupied-subchannel lists do not explicitly identify the primary 20 MHz channel. Bonded radios use the **lowest occupied subchannel** as primary and log this choice. Verify primary channels after import; manual/automatic assignment is not asserted.
@@ -91,7 +92,7 @@ Options (excerpt):
 
 ### On the radar (non-binding)
 - Automatic RF-chain discovery, measured radios and exact primary-channel handling (remaining work for issue #3)
-- AP antennas: models, patterns and per-radio antenna configuration
+- External antenna manufacturer/model resolution and standard pattern representation
 - AP installation: mounting type, azimuth/rotation, tilt and per-radio height differences
 - AP metadata: notes, tags and other source properties, subject to OpenIntent representation and importer support
 - Attenuation areas (types + polygons)
@@ -158,3 +159,33 @@ the RF-chain count. Power conversion has schema and synthetic regression coverag
 confirmed live Hamina import of the tested planned-radio powers, with differences
 below 0.05 dB from the source total conducted values, consistent with integer
 per-chain dBm quantization. This does not establish support for every model or importer.
+
+## Antenna mapping and source preservation
+
+For referenced integrated antennas, `antennas` contains source antenna definitions
+with `vendor` from `apVendor`, `model` from the antenna `name` (not the AP model),
+band and optional `maxGain`/directional type. Records are band-specific definitions;
+physical antenna/lead counts and importer catalog aliases are not inferred.
+Referenced bands must agree with the radio spectrum. Source identities need not
+match a destination catalog. Live importer recognition remains unverified.
+
+For external antennas, `apVendor` identifies the parent AP vendor and cannot
+establish the antenna manufacturer. Unknown/external coupling or incomplete
+identity therefore retains source metadata without inventing a standard antenna
+identity. Missing/deleted antenna types retain the original reference only.
+
+OI 2.0.2 has no standard fields for mounting type, raw radiation patterns or an
+explicit radio-to-antenna link. The schema permits additional properties. We use:
+
+- AP `oiconvert_source.version`: extension version, currently 1.
+- AP `oiconvert_source.antenna_configurations`: records keyed by `radio_id`,
+  with original mounting/direction/tilt/height/reference in `parameters`, and
+  available source definition fields in `antenna_type` (including patterns).
+- Antenna `oiconvert_source.radio_id`: source radio slot.
+
+These are converter extensions, **not standard OI fields**. Generic importers
+may ignore or discard them; schema validation does not imply importer support.
+Source orientation is intentionally not copied to standard `orientation`: its
+frame depends on mounting/model/pattern defaults. In particular, a wall-mounted
+source tilt of 44 degrees is retained as 44 degrees of source metadata, without
+claiming an OI pitch or encoding wall mounting as tilt.
