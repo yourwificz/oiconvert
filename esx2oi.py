@@ -19,7 +19,7 @@ Emits entities commonly accepted by OI 2.x importers:
 - Floorplans: name, map_uri, pixel/meter/feet dimensions (pixel 'height' = ceiling height in px),
              wall_segments (Y-flipped to align with images)
 - Wall materials: from ESX wallTypes, with prefix and 1-decimal rounding (used-only by default)
-- Access Points: minimal radios+antennas, coordinates in pixels→meters→feet with pixel z set to pixel ceiling
+- Access Points: source vendor/model, legacy placeholder radios, coordinates in pixels→meters→feet
 - Coverage areas: inclusion/exclusion polygons in Y-flipped pixel coordinates
 - Top-level switches: [] (schema parity)
 
@@ -28,7 +28,7 @@ Defaults:
 - Include only the materials actually used by wall segments
 - Prefix wall material names with "[Imported] "
 - map_uri uses "file://images/..."
-- Fallback AP model: ubiquiti/uap-ac-pro (so pins/BOM render in common importers)
+- Preserve source AP vendor/model; fallback: ubiquiti/uap-ac-pro when either is missing
 
 Dropped:
 - OI 1.x
@@ -295,7 +295,7 @@ def _clamp(v, lo, hi):
     except Exception:
         return lo
 
-def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, floor_dims_by_name, fallback_vendor, fallback_model):
+def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, floor_dims_by_name, fallback_vendor, fallback_model, force_fallback=False):
     aps_out = []
     for i, ap in enumerate(esx_aps or []):
         loc = ap.get("location") or {}
@@ -322,10 +322,14 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
             else:
                 coords = [{"coordinate_xyz": {"x": float(x_px), "y": float(y_px), "z": 0.0, "unit": "pixels"}}]
 
-        # Force known model for importer visibility (keep originals as *_original)
+        # Preserve catalog identifiers verbatim: casing and punctuation may matter.
         v_orig = (ap.get("vendor") or ap.get("manufacturer") or "").strip()
         m_orig = (ap.get("model") or "").strip()
-        v, m = (fallback_vendor or "ubiquiti").lower(), (fallback_model or "uap-ac-pro").lower()
+        v, m = v_orig, m_orig
+        if force_fallback or not (v and m):
+            v, m = fallback_vendor, fallback_model
+            info(f"AP {ap.get('name') or i}: using fallback {v}/{m} "
+                 f"({'forced' if force_fallback else 'source vendor/model incomplete'})")
 
         radios = [
             {"id": 0, "radio_function": "CLIENT_ACCESS", "band": "FREQ_2.4GHZ",
@@ -333,18 +337,12 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
             {"id": 1, "radio_function": "CLIENT_ACCESS", "band": "FREQ_5GHZ",
              "channel": 36, "channel_width": "80_MHz", "transmit_power": 6, "mimo_chains": 2},
         ]
-        antennas = [{
-            "vendor": v, "model": m,
-            "bands": [{"band": "FREQ_2.4GHZ"}, {"band": "FREQ_5GHZ"}]
-        }]
-
         ap_out = {
             "name": ap.get("name") or f"AP-{i}",
             "floorplan_name": floor_name,
             "manufacturer": v,
             "model": m,
             "dot11_radios": radios,
-            "antennas": antennas,
             "coordinates": coords,
             "orientation": {"rotation": 0, "tilt": 0},
             "display_color": "#4687f0",
@@ -378,6 +376,8 @@ def main():
     ap.add_argument("--all-materials", action="store_true", help="Export all ESX wall types (default: only used)")
     ap.add_argument("--fallback-manufacturer", default="ubiquiti", help="AP vendor fallback")
     ap.add_argument("--fallback-model", default="uap-ac-pro", help="AP model fallback")
+    ap.add_argument("--force-fallback-model", action="store_true",
+                    help="Replace all AP models with the fallback vendor/model (legacy behavior)")
     args = ap.parse_args()
 
     z, esx_floors, wall_segs, wall_pts, wall_types, esx_aps, esx_radios, meters_per_unit, project_title = load_esx_structures(args.esx)
@@ -389,7 +389,7 @@ def main():
     floor_name_by_id = {f["id"]: (f.get("name") or "Floor") for f in esx_floors}
     floor_dims_by_name = {f["name"]: (f["dimensions"][0]["width"], f["dimensions"][0]["length"]) for f in floors_out}
     aps_out = build_aps(esx_aps, floor_name_by_id, floor_img_h, meters_per_unit, floor_dims_by_name,
-                        args.fallback_manufacturer, args.fallback_model)
+                        args.fallback_manufacturer, args.fallback_model, args.force_fallback_model)
 
     oi = {
         "openintent_version": "2.0.2",
