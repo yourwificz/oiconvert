@@ -151,6 +151,107 @@ class ConversionTests(unittest.TestCase):
         self.files["accessPoints.json"] = {"accessPoints": []}
         self.assertNotIn("accesspoints", self.convert())
 
+    def add_planned_ap(self):
+        self.files["accessPoints.json"] = {"accessPoints": [
+            {"id": "planned", "name": "Planned", "vendor": "Example", "model": "Model",
+             "color": "#12aBcD", "location": {"floorPlanId": "floor-1",
+             "coord": {"x": 50, "y": 10}}},
+            {"id": "measured", "name": "Measured"},
+        ]}
+        self.files["simulatedRadios.json"] = {"simulatedRadios": [
+            {"accessPointId": "planned", "accessPointIndex": slot,
+             "radioTechnology": "IEEE802_11", "enabled": True,
+             "channelByCenterFrequencyDefinedNarrowChannels": frequencies,
+             "antennaHeight": 3.1, "transmitPower": 17.5, "spatialStreamCount": 2}
+            for slot, frequencies in [(0, [2437]), (1, [5200, 5180]),
+                                       (2, [6015, 5995, 5975, 5955])]
+        ]}
+        return self.files["simulatedRadios.json"]["simulatedRadios"]
+
+    def test_planned_channels_heights_colors_and_no_invented_properties(self):
+        self.add_planned_ap()
+        ap, measured = self.convert()["accesspoints"]
+        self.assertEqual(ap["dot11_radios"], [
+            {"id": 0, "radio_function": "CLIENT_ACCESS", "band": "FREQ_2.4GHZ",
+             "channel": 6, "channel_width": "20_MHz"},
+            {"id": 1, "radio_function": "CLIENT_ACCESS", "band": "FREQ_5GHZ",
+             "channel": 36, "channel_width": "40_MHz"},
+            {"id": 2, "radio_function": "CLIENT_ACCESS", "band": "FREQ_6GHZ",
+             "channel": 1, "channel_width": "80_MHz"},
+        ])
+        self.assertEqual(ap["display_color"], "#12aBcD")
+        for coordinate, expected_z in zip(ap["coordinates"], [31.0, 3.1, 3.1*3.28084]):
+            self.assertAlmostEqual(coordinate["coordinate_xyz"]["z"], expected_z)
+        self.assertNotIn("orientation", ap)
+        self.assertNotIn("dot11_radios", measured)
+
+    def test_disabled_deleted_and_bluetooth_radios(self):
+        radios = self.add_planned_ap()
+        radios[0]["enabled"] = False
+        radios[1]["status"] = "DELETED"
+        radios.append({"radioTechnology": "BLUETOOTH", "accessPointId": "planned"})
+        output = self.convert()["accesspoints"][0]["dot11_radios"]
+        self.assertEqual([r["id"] for r in output], [0, 2])
+        self.assertEqual(output[0]["radio_function"], "DISABLED")
+
+    def test_missing_radio_channels_are_not_invented(self):
+        for radio in self.add_planned_ap():
+            radio.pop("channelByCenterFrequencyDefinedNarrowChannels")
+        self.assertEqual(self.convert()["accesspoints"][0]["dot11_radios"],
+                         [{"id": i, "radio_function": "CLIENT_ACCESS"} for i in range(3)])
+
+    def test_invalid_radio_spectrum_is_rejected(self):
+        for frequencies in ([True], [float("nan")], ["5180"], [123],
+                            [5180, 5180], [2412, 5180], [5180, 5260],
+                            [5180, 5200, 5220], [2412, 2432, 2452, 2472]):
+            with self.subTest(frequencies=frequencies):
+                self.add_planned_ap()[0]["channelByCenterFrequencyDefinedNarrowChannels"] = frequencies
+                self.convert(success=False)
+
+    def test_radio_association_and_indices_are_validated(self):
+        radios = self.add_planned_ap()
+        radios[0]["accessPointId"] = "unknown"
+        self.assertIn("unknown AP", self.convert(success=False).stderr)
+        radios = self.add_planned_ap()
+        radios[1]["accessPointIndex"] = 0
+        self.assertIn("radio index", self.convert(success=False).stderr)
+
+    def test_invalid_and_conflicting_heights_are_rejected(self):
+        for height in (None, True, -1, float("inf"), "3", 4):
+            with self.subTest(height=height):
+                self.add_planned_ap()[0]["antennaHeight"] = height
+                self.convert(success=False)
+
+    def test_zero_installation_height_is_preserved(self):
+        for radio in self.add_planned_ap():
+            radio["antennaHeight"] = 0
+        self.assertTrue(all(c["coordinate_xyz"]["z"] == 0
+                            for c in self.convert()["accesspoints"][0]["coordinates"]))
+
+    def test_invalid_ap_color_is_rejected(self):
+        self.add_planned_ap()
+        self.files["accessPoints.json"]["accessPoints"][0]["color"] = "red"
+        self.assertIn("display color", self.convert(success=False).stderr)
+
+    def test_radio_channel_edges_and_wide_spectrum(self):
+        cases = [([2484], "FREQ_2.4GHZ", 14, "20_MHz"),
+                 ([5935], "FREQ_6GHZ", 2, "20_MHz"),
+                 ([5180 + 20*i for i in range(8)], "FREQ_5GHZ", 36, "160_MHz"),
+                 ([5955 + 20*i for i in range(16)], "FREQ_6GHZ", 1, "320_MHz")]
+        for frequencies, band, channel, width in cases:
+            with self.subTest(channel=channel, width=width):
+                self.add_planned_ap()[0]["channelByCenterFrequencyDefinedNarrowChannels"] = frequencies
+                radio = self.convert()["accesspoints"][0]["dot11_radios"][0]
+                self.assertEqual((radio["band"], radio["channel"], radio["channel_width"]),
+                                 (band, channel, width))
+
+    def test_unscaled_height_is_not_written_as_pixel_height(self):
+        self.add_planned_ap()
+        self.files["floorPlans.json"]["floorPlans"][0].pop("metersPerUnit")
+        coordinates = self.convert()["accesspoints"][0]["coordinates"]
+        self.assertEqual(len(coordinates), 1)
+        self.assertNotIn("z", coordinates[0]["coordinate_xyz"])
+
     def test_source_ap_model_preserved_verbatim(self):
         self.files["accessPoints.json"] = {"accessPoints": [
             {"name": "Ruckus AP", "vendor": "Ruckus", "model": "R850"},
