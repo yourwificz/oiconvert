@@ -36,7 +36,7 @@ Options (excerpt):
 - `--fallback-model "uap-ac-pro"`
 - `--force-fallback-model` — replace every source AP model with the fallback pair (legacy behavior)
 
-> Complete source manufacturer/model pairs are preserved, including casing and punctuation. If either field is missing, the complete fallback pair is used and reported on stderr. `--force-fallback-model` restores the previous behavior. Originals remain in `manufacturer_original` and `model_original`. Model recognition depends on the importer’s catalog and still needs live verification.
+> Complete source manufacturer/model pairs are preserved, including casing and punctuation. If either field is missing, the complete fallback pair is used and reported on stderr. `--force-fallback-model` restores the previous behavior. Originals remain in `manufacturer_original` and `model_original`. Model recognition depends on the importer’s catalog. The maintainer confirmed successful model import using synthetic and real-project samples.
 
 ---
 
@@ -76,7 +76,10 @@ Options (excerpt):
   - Ignored by some importers; set post-import if needed.
 
 ### On the radar (non-binding)
-- Source radio channels, widths, power and antenna configuration (remaining work for issue #3)
+- Source radio channels, widths, power, enabled state and spatial streams, including 6 GHz (remaining work for issue #3)
+- AP antennas: models, patterns and per-radio antenna configuration
+- AP installation: mounting type, installation height, azimuth/rotation and tilt
+- AP metadata: notes, tags, display colors and other source properties, subject to OpenIntent representation and importer support
 - Attenuation areas (types + polygons)
 - Reference/scale markers
 - Notes & picture notes (image annotations)
@@ -121,4 +124,4 @@ The reporter's original ESX is unavailable. Wall-free conversion, coverage areas
 /usr/bin/python3 /abs/path/esx2oi.py   --esx "/abs/path/in.esx"   --out "/abs/path/out.zip"   --prefix "[Imported] "   --fallback-manufacturer "ubiquiti"   --fallback-model "uap-ac-pro"
 ```
 
-AP model preservation is covered by synthetic regression fixtures; live Hamina catalog matching remains unverified.
+AP model preservation is covered by synthetic regression fixtures. The maintainer confirmed successful Hamina model recognition with synthetic and real-project samples. This does not verify source radio settings or other AP properties.
