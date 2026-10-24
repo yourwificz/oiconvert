@@ -19,7 +19,7 @@ Emits entities commonly accepted by OI 2.x importers:
 - Floorplans: name, map_uri, pixel/meter/feet dimensions (pixel 'height' = ceiling height in px),
              wall_segments (Y-flipped to align with images)
 - Wall materials: from ESX wallTypes, with prefix and 1-decimal rounding (used-only by default)
-- Access Points: source vendor/model, legacy placeholder radios, coordinates in pixels→meters→feet
+- Access Points: source vendor/model, planned WLAN channels/widths, height and display color
 - Coverage areas: inclusion/exclusion polygons in Y-flipped pixel coordinates
 - Top-level switches: [] (schema parity)
 
@@ -43,7 +43,8 @@ Usage:
     --fallback-model "uap-ac-pro"
 
 Notes:
-- Some importers derive AP mounting type from the AP model's default. Tilt/azimuth is often ignored on import.
+- Mounting, antenna patterns, orientation, power and RF chain counts are not mapped.
+- Bonded radios use the lowest occupied 20 MHz subchannel as primary; verify after import.
 - Original ESX AP vendor/model are preserved in manufacturer_original/model_original fields.
 """
 import argparse, io, json, math, os, re, sys, unicodedata, zipfile
@@ -295,9 +296,80 @@ def _clamp(v, lo, hi):
     except Exception:
         return lo
 
-def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, floor_dims_by_name, fallback_vendor, fallback_model, force_fallback=False):
+def frequency_to_band_channel(frequency):
+    if type(frequency) not in (int, float) or not math.isfinite(frequency):
+        die("Invalid planned radio frequency")
+    if frequency == 2484:
+        return "FREQ_2.4GHZ", 14
+    if 2412 <= frequency <= 2472 and (frequency - 2412) % 5 == 0:
+        return "FREQ_2.4GHZ", int((frequency - 2407) / 5)
+    if 5000 < frequency < 5925 and frequency % 5 == 0:
+        return "FREQ_5GHZ", int((frequency - 5000) / 5)
+    if frequency == 5935:
+        return "FREQ_6GHZ", 2
+    if 5955 <= frequency <= 7115 and (frequency - 5955) % 20 == 0:
+        return "FREQ_6GHZ", int((frequency - 5950) / 5)
+    die("Unsupported planned radio frequency")
+
+
+def build_planned_radios(source):
+    output, seen = [], set()
+    for index, radio in enumerate(source):
+        slot = radio.get("accessPointIndex", index)
+        if type(slot) is not int or slot < 0 or slot in seen:
+            die("Invalid or duplicate planned radio index")
+        seen.add(slot)
+        enabled = radio.get("enabled", True)
+        if type(enabled) is not bool:
+            die("Invalid planned radio enabled state")
+        result = {"id": slot, "radio_function": "CLIENT_ACCESS" if enabled else "DISABLED"}
+        frequencies = radio.get("channelByCenterFrequencyDefinedNarrowChannels", [])
+        if not isinstance(frequencies, list):
+            die("Invalid planned radio channel list")
+        if frequencies:
+            channels = [frequency_to_band_channel(f) for f in frequencies]
+            ordered = sorted(frequencies)
+            if len(set(frequencies)) != len(frequencies) or len({b for b, _ in channels}) != 1:
+                die("Duplicate or mixed-band planned radio frequencies")
+            if any(b - a != 20 for a, b in zip(ordered, ordered[1:])):
+                die("Non-contiguous planned radio channels are not supported")
+            width = 20 * len(frequencies)
+            if width not in (20, 40, 80, 160, 320):
+                die("Unsupported planned radio channel width")
+            if width > {"FREQ_2.4GHZ": 40, "FREQ_5GHZ": 160, "FREQ_6GHZ": 320}[channels[0][0]]:
+                die("Unsupported channel width for planned radio band")
+            # ESX describes occupied 20 MHz subchannels, not an explicit primary.
+            # Use the lowest subchannel to preserve the occupied contiguous block.
+            result.update(band=channels[0][0], channel=min(c for _, c in channels),
+                          channel_width=f"{width}_MHz")
+            if len(frequencies) > 1:
+                info("Bonded radio: using lowest occupied subchannel as primary; verify after import")
+        output.append(result)
+    return sorted(output, key=lambda r: r["id"])
+
+
+def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, floor_dims_by_name, fallback_vendor, fallback_model, force_fallback=False, esx_radios=None):
+    planned = {}
+    ap_ids = {ap.get("id") for ap in esx_aps or []}
+    for radio in esx_radios or []:
+        if radio.get("status") == "DELETED" or radio.get("radioTechnology") != "IEEE802_11":
+            continue
+        if not radio.get("accessPointId") or radio["accessPointId"] not in ap_ids:
+            die("Planned radio references unknown AP")
+        planned.setdefault(radio["accessPointId"], []).append(radio)
     aps_out = []
     for i, ap in enumerate(esx_aps or []):
+        source_radios = planned.get(ap.get("id"), [])
+        heights = {r["antennaHeight"] for r in source_radios if "antennaHeight" in r
+                   and type(r["antennaHeight"]) in (int, float)
+                   and math.isfinite(r["antennaHeight"]) and r["antennaHeight"] >= 0}
+        if any("antennaHeight" in r and (type(r["antennaHeight"]) not in (int, float)
+               or not math.isfinite(r["antennaHeight"]) or r["antennaHeight"] < 0)
+               for r in source_radios):
+            die("Invalid planned antenna height")
+        if len(heights) > 1:
+            die("Conflicting planned antenna heights cannot be represented as one AP location")
+        height = next(iter(heights), 2.5)
         loc = ap.get("location") or {}
         fid = loc.get("floorPlanId") or ap.get("floorPlanId") or ap.get("floorId")
         floor_name = floor_name_by_id.get(fid) or "Floor"
@@ -313,14 +385,17 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
             mpu = float(meters_per_unit.get(fid) or 0.0)
             if mpu > 0.0:
                 x_m = float(x_px) * mpu; y_m = float(y_px) * mpu
-                px_h = 2.5 / mpu
+                px_h = height / mpu
                 coords = [
                     {"coordinate_xyz": {"x": float(x_px), "y": float(y_px), "z": float(px_h), "unit": "pixels"}},
-                    {"coordinate_xyz": {"x": x_m, "y": y_m, "z": 2.5, "unit": "meters"}},
-                    {"coordinate_xyz": {"x": x_m*3.28084, "y": y_m*3.28084, "z": 8.202, "unit": "feet"}},
+                    {"coordinate_xyz": {"x": x_m, "y": y_m, "z": height, "unit": "meters"}},
+                    {"coordinate_xyz": {"x": x_m*3.28084, "y": y_m*3.28084, "z": height*3.28084 if heights else 8.202, "unit": "feet"}},
                 ]
             else:
                 coords = [{"coordinate_xyz": {"x": float(x_px), "y": float(y_px), "z": 0.0, "unit": "pixels"}}]
+                if heights:
+                    # A physical height cannot be expressed in unscaled pixels.
+                    del coords[0]["coordinate_xyz"]["z"]
 
         # Preserve catalog identifiers verbatim: casing and punctuation may matter.
         v_orig = (ap.get("vendor") or ap.get("manufacturer") or "").strip()
@@ -331,12 +406,10 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
             info(f"AP {ap.get('name') or i}: using fallback {v}/{m} "
                  f"({'forced' if force_fallback else 'source vendor/model incomplete'})")
 
-        radios = [
-            {"id": 0, "radio_function": "CLIENT_ACCESS", "band": "FREQ_2.4GHZ",
-             "channel": 11, "channel_width": "20_MHz", "transmit_power": 6, "mimo_chains": 2},
-            {"id": 1, "radio_function": "CLIENT_ACCESS", "band": "FREQ_5GHZ",
-             "channel": 36, "channel_width": "80_MHz", "transmit_power": 6, "mimo_chains": 2},
-        ]
+        radios = build_planned_radios(source_radios)
+        color = ap.get("color") or "#4687f0"
+        if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+            die("Invalid AP display color")
         ap_out = {
             "name": ap.get("name") or f"AP-{i}",
             "floorplan_name": floor_name,
@@ -344,11 +417,12 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
             "model": m,
             "dot11_radios": radios,
             "coordinates": coords,
-            "orientation": {"rotation": 0, "tilt": 0},
-            "display_color": "#4687f0",
+            "display_color": color,
             "manufacturer_original": v_orig,
             "model_original": m_orig,
         }
+        if not radios:
+            del ap_out["dot11_radios"]
         # Unplaced/measured APs need not have a location. OI 2.0.2 allows
         # coordinates to be absent, but forbids an empty coordinates array.
         if not coords:
@@ -389,7 +463,8 @@ def main():
     floor_name_by_id = {f["id"]: (f.get("name") or "Floor") for f in esx_floors}
     floor_dims_by_name = {f["name"]: (f["dimensions"][0]["width"], f["dimensions"][0]["length"]) for f in floors_out}
     aps_out = build_aps(esx_aps, floor_name_by_id, floor_img_h, meters_per_unit, floor_dims_by_name,
-                        args.fallback_manufacturer, args.fallback_model, args.force_fallback_model)
+                        args.fallback_manufacturer, args.fallback_model, args.force_fallback_model,
+                        esx_radios)
 
     oi = {
         "openintent_version": "2.0.2",
