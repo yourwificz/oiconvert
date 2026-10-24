@@ -154,5 +154,7 @@ Use `--radio-chain-map "/abs/path/radio-chains.json"` with a JSON array like:
 Use the source manufacturer/model strings and one entry per band. Counts must be
 positive integers; duplicate model/band entries are rejected. Keep site-specific
 configuration and project files private. Antenna gain alone does not establish
-the RF-chain count. Power conversion has schema and synthetic regression coverage;
-a live importer round trip remains a separate check.
+the RF-chain count. Power conversion has schema and synthetic regression coverage. The maintainer
+confirmed live Hamina import of the tested planned-radio powers, with differences
+below 0.05 dB from the source total conducted values, consistent with integer
+per-chain dBm quantization. This does not establish support for every model or importer.
