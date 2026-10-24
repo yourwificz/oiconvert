@@ -275,9 +275,23 @@ class ConversionTests(unittest.TestCase):
                                                   if k not in ("id", "status")})
         self.assertNotIn("oiconvert_source", self.convert()["accesspoints"][1])
 
-    def test_external_antenna_vendor_is_not_inferred_from_ap_vendor(self):
+    def test_external_antenna_uses_its_own_vendor_and_gain(self):
         for antenna in self.add_antenna_fixture():
             antenna["apCoupling"] = "EXTERNAL_ANTENNA"
+            antenna["apVendor"] = "Third-party Antennas"
+        ap = self.convert()["accesspoints"][0]
+        self.assertEqual(ap["manufacturer"], "Example")
+        self.assertEqual(len(ap["antennas"]), 3)
+        for index, antenna in enumerate(ap["antennas"]):
+            self.assertEqual(antenna["vendor"], "Third-party Antennas")
+            self.assertEqual(antenna["model"], f"Source antenna {index}")
+            self.assertEqual(antenna["bands"][0]["gain"], 4.5 + index)
+        self.assertEqual(len(ap["oiconvert_source"]["antenna_configurations"]), 3)
+
+    def test_external_antenna_missing_vendor_does_not_inherit_ap_vendor(self):
+        for antenna in self.add_antenna_fixture():
+            antenna["apCoupling"] = "EXTERNAL_ANTENNA"
+            antenna.pop("apVendor")
         ap = self.convert()["accesspoints"][0]
         self.assertNotIn("antennas", ap)
         self.assertEqual(len(ap["oiconvert_source"]["antenna_configurations"]), 3)

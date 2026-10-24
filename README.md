@@ -64,7 +64,7 @@ Options (excerpt):
   - Planned total conducted power is converted to integer per-chain dBm when an explicit RF-chain map is supplied; spatial streams are not used as RF-chain counts
   - Integrated antenna gain can supply standard `transmit_eirp`; external antenna EIRP is omitted because cable losses are unknown
   - Standard OI orientation remains unmapped; raw source values are retained separately
-  - Referenced integrated antenna definitions export their source vendor/name, band, gain and directional type; AP model names are not reused as antenna identities
+  - Referenced integrated and external antenna definitions export their source vendor/name, band, gain and directional type; AP model names are not reused as antenna identities
   - Source mounting, azimuth, tilt, defaults and patterns are preserved in an explicitly nonstandard `oiconvert_source` extension; they are not converted to OI orientation
 - **Coverage areas**
   - `areas.json` and `exclusionAreas.json` become inclusion/exclusion polygons
@@ -92,7 +92,7 @@ Options (excerpt):
 
 ### On the radar (non-binding)
 - Automatic RF-chain discovery, measured radios and exact primary-channel handling (remaining work for issue #3)
-- External antenna manufacturer/model resolution and standard pattern representation
+- Standard radiation-pattern representation and destination catalog identity resolution
 - AP installation: mounting type, azimuth/rotation, tilt and per-radio height differences
 - AP metadata: notes, tags and other source properties, subject to OpenIntent representation and importer support
 - Attenuation areas (types + polygons)
@@ -162,17 +162,19 @@ per-chain dBm quantization. This does not establish support for every model or i
 
 ## Antenna mapping and source preservation
 
-For referenced integrated antennas, `antennas` contains source antenna definitions
+For referenced integrated and external antennas, `antennas` contains source antenna definitions
 with `vendor` from `apVendor`, `model` from the antenna `name` (not the AP model),
 band and optional `maxGain`/directional type. Records are band-specific definitions;
 physical antenna/lead counts and importer catalog aliases are not inferred.
 Referenced bands must agree with the radio spectrum. Source identities need not
 match a destination catalog. Live importer recognition remains unverified.
 
-For external antennas, `apVendor` identifies the parent AP vendor and cannot
-establish the antenna manufacturer. Unknown/external coupling or incomplete
-identity therefore retains source metadata without inventing a standard antenna
-identity. Missing/deleted antenna types retain the original reference only.
+The vendor is read from the referenced `antennaTypes` record, independently of
+`accessPoints.vendor`. A third-party antenna may therefore retain a different
+vendor from its parent AP. This was verified against a private source sample
+with same-vendor and third-party external antennas. Unknown coupling or missing
+antenna identity retains source metadata without borrowing the AP vendor.
+Missing/deleted antenna types retain the original reference only.
 
 OI 2.0.2 has no standard fields for mounting type, raw radiation patterns or an
 explicit radio-to-antenna link. The schema permits additional properties. We use:

@@ -392,7 +392,7 @@ def build_planned_radios(source, identity=("", ""), chain_map=None, antenna_type
 
 
 def build_antennas(source, antenna_types):
-    """Map known integrated identities; preserve unresolved source frames separately."""
+    """Map source antenna identities independently of the parent AP identity."""
     output, configurations = [], []
     bands = {"TWO": "FREQ_2.4GHZ", "FIVE": "FREQ_5GHZ", "SIX": "FREQ_6GHZ"}
     for index, radio in enumerate(source):
@@ -410,10 +410,10 @@ def build_antennas(source, antenna_types):
         configurations.append(record)
         if not antenna:
             continue
-        # apVendor describes the AP vendor, not necessarily an external antenna's
-        # manufacturer. Only integrated antennas can safely use that identity.
-        if antenna.get("apCoupling") != "INTERNAL_ANTENNA":
-            info("External/unknown antenna coupling: preserving source data without inferred vendor")
+        # In antennaTypes, apVendor belongs to the selected antenna definition.
+        # It can differ from accessPoints.vendor for third-party antennas.
+        if antenna.get("apCoupling") not in ("INTERNAL_ANTENNA", "EXTERNAL_ANTENNA"):
+            info("Unknown antenna coupling: preserving source data without inferred identity")
             continue
         vendor, model = antenna.get("apVendor"), antenna.get("name")
         band = bands.get(antenna.get("frequencyBand"))
