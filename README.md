@@ -12,11 +12,12 @@ Contributions & test reports welcome.
 Converts Ekahau **.esx** projects into **OpenIntent 2.0.2** ZIPs.
 
 > **Compatibility scope**  
-> The converter emits `openintent_version: "2.0.2"`; regression fixtures validate against the official 2.0.2 release schema. The converter has historically been **tested primarily against Hamina Network Planner’s importer**. A live import of the updated output has not yet been verified. Other tools may interpret certain fields differently; please try your target tool and report results (PRs/issues welcome).
+> The converter emits `openintent_version: "2.0.2"`; regression fixtures validate against the official 2.0.2 release schema. The OpenIntent 2.0.2 output was successfully imported into **Hamina Network Planner** with and without walls. The maintainer also confirmed successful import of coverage areas and exclusions. Other tools may interpret certain fields differently; please try your target tool and report results (PRs/issues welcome).
 
 - Floors: images + dimensions (px/m/ft), geometry Y-flipped to align with images  
 - Walls & materials: used-only, names prefixed `[Imported]`, attenuation rounded to 1 decimal  
 - APs: coordinates and minimal radio/antenna info; fallback AP model so pins/BOM (bill of materials) render in tested importer(s)
+- Coverage areas: inclusion and exclusion polygons, assigned to their source floor
 
 **License:** Apache-2.0
 
@@ -56,6 +57,11 @@ Options (excerpt):
   - Coordinates as `coordinate_xyz` in **this order**: **pixels → meters → feet**
   - Pixel `z` equals floor pixel “ceiling height”; meters/feet `z` = 2.5 m / 8.202 ft
   - Minimal radios (2.4/5 GHz) and antennas per AP
+- **Coverage areas**
+  - `areas.json` and `exclusionAreas.json` become inclusion/exclusion polygons
+  - Polygon coordinates use pixels with the same Y flip as walls and APs
+  - Deleted areas are ignored; malformed polygons and unknown floors are rejected
+  - Requirement profiles, area names/colors, and capacity settings are not mapped
 - **Schema parity**
   - Top-level `switches: []` included for parity with some importers
 
@@ -68,7 +74,7 @@ Options (excerpt):
   - Ignored by some importers; set post-import if needed.
 
 ### On the radar (non-binding)
-- Coverage/scope zones → `floorplans[].coverage_areas[]`
+- Source AP models and radio settings (issue #3)
 - Attenuation areas (types + polygons)
 - Reference/scale markers
 - Notes & picture notes (image annotations)
@@ -100,10 +106,10 @@ python3 -m unittest discover -s tests -v
 
 Tests generate synthetic ESX archives covering floorplan-only projects, all eight
 combinations of missing/empty wall files, standard walls and APs, mixed floors,
-`--all-materials`, and missing or malformed input data. Successful conversions
+`--all-materials`, coverage geometry and exclusions, and missing or malformed input data. Successful conversions
 are checked against a pinned, unmodified official OpenIntent 2.0.2 JSON schema,
 including the embedded images. No network access is needed to run the tests.
-The reporter's original ESX and a live Hamina import have not been tested.
+The reporter's original ESX is unavailable. Wall-free conversion, coverage areas and exclusions were successfully imported into Hamina, as confirmed by the maintainer.
 
 ---
 
