@@ -16,7 +16,7 @@ Converts Ekahau **.esx** projects into **OpenIntent 2.0.2** ZIPs.
 
 - Floors: images + dimensions (px/m/ft), geometry Y-flipped to align with images  
 - Walls & materials: used-only, names prefixed `[Imported]`, attenuation rounded to 1 decimal  
-- APs: coordinates and minimal radio/antenna info; fallback AP model so pins/BOM (bill of materials) render in tested importer(s)
+- APs: source vendor/model and coordinates; fallback for incomplete identities
 - Coverage areas: inclusion and exclusion polygons, assigned to their source floor
 
 **License:** Apache-2.0
@@ -34,8 +34,9 @@ Options (excerpt):
 - `--all-materials` — export *all* ESX wall types (default = only those actually used)  
 - `--fallback-manufacturer "ubiquiti"`  
 - `--fallback-model "uap-ac-pro"`
+- `--force-fallback-model` — replace every source AP model with the fallback pair (legacy behavior)
 
-> Mounting type in some tools (e.g., Hamina) is **derived from AP model defaults**. To get ceiling-mount icons by default, the converter can force a known model via `--fallback-*`. Original ESX values are kept in `manufacturer_original` and `model_original`.
+> Complete source manufacturer/model pairs are preserved, including casing and punctuation. If either field is missing, the complete fallback pair is used and reported on stderr. `--force-fallback-model` restores the previous behavior. Originals remain in `manufacturer_original` and `model_original`. Model recognition depends on the importer’s catalog. The maintainer confirmed successful model import using synthetic and real-project samples.
 
 ---
 
@@ -53,10 +54,11 @@ Options (excerpt):
   - Names prefixed with `[Imported] ...`; attenuation rounded to **1 decimal**
 - **Access Points**
   - Unplaced APs are retained without empty coordinates or an invented floor reference.
-  - AP pins visible in tested importer(s) (forces a known model by default; original vendor/model preserved)
+  - Complete source vendor/model pairs are preserved; fallback is used for incomplete identities or when explicitly forced
   - Coordinates as `coordinate_xyz` in **this order**: **pixels → meters → feet**
   - Pixel `z` equals floor pixel “ceiling height”; meters/feet `z` = 2.5 m / 8.202 ft
-  - Minimal radios (2.4/5 GHz) and antennas per AP
+  - Radio settings still use legacy placeholder values (2.4/5 GHz); source radio settings are not yet exported
+  - No invented antenna object: AP models are not antenna model identifiers
 - **Coverage areas**
   - `areas.json` and `exclusionAreas.json` become inclusion/exclusion polygons
   - Polygon coordinates use pixels with the same Y flip as walls and APs
@@ -67,14 +69,17 @@ Options (excerpt):
 
 ### Workarounds / caveats
 - **AP vendor/model recognition**
-  - Some importers may hide pins/BOM when the model is unknown. Use the **fallback model** (default: `ubiquiti / uap-ac-pro`) to ensure visibility; originals are retained in `*_original` fields.
+  - Some importers may hide pins/BOM when the model is unknown. Try `--force-fallback-model` with a known catalog model (default: `ubiquiti / uap-ac-pro`); originals are retained in `*_original` fields.
 - **AP mounting type**
   - Not directly importable in some tools (often set from the **model’s default**); adjust post-import if needed.
 - **AP tilt/azimuth**
   - Ignored by some importers; set post-import if needed.
 
 ### On the radar (non-binding)
-- Source AP models and radio settings (issue #3)
+- Source radio channels, widths, power, enabled state and spatial streams, including 6 GHz (remaining work for issue #3)
+- AP antennas: models, patterns and per-radio antenna configuration
+- AP installation: mounting type, installation height, azimuth/rotation and tilt
+- AP metadata: notes, tags, display colors and other source properties, subject to OpenIntent representation and importer support
 - Attenuation areas (types + polygons)
 - Reference/scale markers
 - Notes & picture notes (image annotations)
@@ -106,7 +111,7 @@ python3 -m unittest discover -s tests -v
 
 Tests generate synthetic ESX archives covering floorplan-only projects, all eight
 combinations of missing/empty wall files, standard walls and APs, mixed floors,
-`--all-materials`, coverage geometry and exclusions, and missing or malformed input data. Successful conversions
+`--all-materials`, AP identity preservation/fallback, coverage geometry and exclusions, and missing or malformed input data. Successful conversions
 are checked against a pinned, unmodified official OpenIntent 2.0.2 JSON schema,
 including the embedded images. No network access is needed to run the tests.
 The reporter's original ESX is unavailable. Wall-free conversion, coverage areas and exclusions were successfully imported into Hamina, as confirmed by the maintainer.
@@ -118,3 +123,5 @@ The reporter's original ESX is unavailable. Wall-free conversion, coverage areas
 ```bash
 /usr/bin/python3 /abs/path/esx2oi.py   --esx "/abs/path/in.esx"   --out "/abs/path/out.zip"   --prefix "[Imported] "   --fallback-manufacturer "ubiquiti"   --fallback-model "uap-ac-pro"
 ```
+
+AP model preservation is covered by synthetic regression fixtures. The maintainer confirmed successful Hamina model recognition with synthetic and real-project samples. This does not verify source radio settings or other AP properties.
