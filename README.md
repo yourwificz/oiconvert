@@ -189,3 +189,20 @@ Source orientation is intentionally not copied to standard `orientation`: its
 frame depends on mounting/model/pattern defaults. In particular, a wall-mounted
 source tilt of 44 degrees is retained as 44 degrees of source metadata, without
 claiming an OI pitch or encoding wall mounting as tilt.
+
+### Verified tilt sign and remaining frame limits
+
+A controlled ESX/UI comparison with otherwise matching wall-mounted integrated
+APs confirms positive source tilt points up, zero is horizontal and negative
+tilt points down. A separate Hamina custom-tilt check exports positive UI
+downtilt with a negative OI tilt. The converter does not negate source tilt to
+imitate a destination UI: raw negative, zero and positive values are preserved
+exactly together with source mounting and model defaults.
+
+This does not establish a universal standard orientation mapping. OI 2.0.2
+defines horizontal zero and up-positive pitch explicitly for directional APs;
+for integrated/omnidirectional antennas, zero is the model-default orientation.
+The relationship between source wall/ceiling/floor mounting and that model
+reference is not specified by OI. Standard orientation therefore remains unset
+for the currently unresolved cases. Sign preservation must not be described as
+completed orientation conversion or guaranteed importer support.

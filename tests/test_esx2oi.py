@@ -282,6 +282,23 @@ class ConversionTests(unittest.TestCase):
         self.assertNotIn("antennas", ap)
         self.assertEqual(len(ap["oiconvert_source"]["antenna_configurations"]), 3)
 
+    def test_tilt_sign_is_preserved_without_implicit_mount_conversion(self):
+        for mount in ("WALL", "CEILING", "FLOOR"):
+            for tilt in (-44.0, 0.0, 44.0):
+                with self.subTest(mount=mount, tilt=tilt):
+                    self.add_antenna_fixture()
+                    for radio in self.files["simulatedRadios.json"]["simulatedRadios"]:
+                        radio["antennaMounting"] = mount
+                        radio["antennaTilt"] = tilt
+                    ap = self.convert()["accesspoints"][0]
+                    self.assertNotIn("orientation", ap)
+                    for antenna in ap["antennas"]:
+                        self.assertNotIn("orientation", antenna)
+                    for configuration in ap["oiconvert_source"]["antenna_configurations"]:
+                        self.assertEqual(configuration["parameters"]["antennaTilt"], tilt)
+                        self.assertEqual(configuration["parameters"]["antennaMounting"], mount)
+                        self.assertEqual(configuration["antenna_type"]["defaultMounting"], "CEILING")
+
     def test_unresolved_antenna_identity_is_preserved_without_invention(self):
         types = self.add_antenna_fixture()
         types[0].pop("apVendor")
