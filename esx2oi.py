@@ -19,7 +19,8 @@ Emits entities commonly accepted by OI 2.x importers:
 - Floorplans: name, map_uri, pixel/meter/feet dimensions (pixel 'height' = ceiling height in px),
              wall_segments (Y-flipped to align with images)
 - Wall materials: from ESX wallTypes, with prefix and 1-decimal rounding (used-only by default)
-- Access Points: minimal radios+antennas, coordinates in pixels→meters→feet with pixel z set to pixel ceiling
+- Access Points: source vendor/model, legacy placeholder radios, coordinates in pixels→meters→feet
+- Coverage areas: inclusion/exclusion polygons in Y-flipped pixel coordinates
 - Top-level switches: [] (schema parity)
 
 Defaults:
@@ -27,7 +28,7 @@ Defaults:
 - Include only the materials actually used by wall segments
 - Prefix wall material names with "[Imported] "
 - map_uri uses "file://images/..."
-- Fallback AP model: ubiquiti/uap-ac-pro (so pins/BOM render in common importers)
+- Preserve source AP vendor/model; fallback: ubiquiti/uap-ac-pro when either is missing
 
 Dropped:
 - OI 1.x
@@ -45,7 +46,7 @@ Notes:
 - Some importers derive AP mounting type from the AP model's default. Tilt/azimuth is often ignored on import.
 - Original ESX AP vendor/model are preserved in manufacturer_original/model_original fields.
 """
-import argparse, io, json, os, re, sys, unicodedata, zipfile
+import argparse, io, json, math, os, re, sys, unicodedata, zipfile
 from statistics import median
 from typing import Dict, Any, Tuple, List
 
@@ -210,8 +211,49 @@ def build_walls_for_floor_flipped(floor_id: str, img_h: float, wall_segments, wa
         })
     return segs
 
+def load_coverage_areas(z, floor_ids):
+    """Read coverage polygons separately from RF attenuation and floor holes."""
+    areas = {}
+    for filename, key, exclusion in (
+        ("areas.json", "areas", False),
+        ("exclusionAreas.json", "exclusionAreas", True),
+    ):
+        if filename not in z.namelist():
+            continue
+        for item in read_json_from_zip(z, filename)[key]:
+            if item.get("status") == "DELETED":
+                continue
+            fid = item.get("floorPlanId")
+            if fid not in floor_ids:
+                die(f"Coverage area in {filename} references unknown floor: {fid}")
+            points = item.get("area")
+            if not isinstance(points, list) or len(points) < 3:
+                die(f"Coverage area in {filename} must contain at least three points")
+            for point in points:
+                if not isinstance(point, dict) or any(
+                    type(point.get(axis)) not in (int, float)
+                    or not math.isfinite(point[axis]) for axis in ("x", "y")
+                ):
+                    die(f"Invalid coverage area coordinates in {filename}")
+            areas.setdefault(fid, []).append((points, exclusion))
+    return areas
+
+
+def build_coverage_for_floor(items, img_h):
+    # Coverage geometry uses the same pixel origin as walls and AP positions.
+    return [{
+        "area": {"coordinates": [
+            {"coordinate_xyz": {"x": float(p["x"]), "y": float(img_h) - float(p["y"]),
+                                "z": 0.0, "unit": "pixels"}}
+            for p in points
+        ]},
+        "exclusion": exclusion,
+    } for points, exclusion in items]
+
+
 def build_floor_objects(z, esx_floors, wall_segments, wall_points, id2pref, proj_prefix, meters_per_unit, project_name):
     floors_out, images, floor_img_h = [], {}, {}
+    coverage = load_coverage_areas(z, {f["id"] for f in esx_floors})
     for f in esx_floors:
         name = f.get("name") or "Floor"
         target_w = int(round(f.get("width") or f.get("cropMaxX") or 0))
@@ -232,7 +274,7 @@ def build_floor_objects(z, esx_floors, wall_segments, wall_points, id2pref, proj
             "name": name,
             "map_uri": map_uri,
             "dimensions": dims,
-            "coverage_areas": [],
+            "coverage_areas": build_coverage_for_floor(coverage.get(f.get("id"), []), h),
             "wall_segments": build_walls_for_floor_flipped(f.get("id"), h, wall_segments, wall_points, id2pref),
             "project_name": project_name,
             "rotation": 0,
@@ -253,7 +295,7 @@ def _clamp(v, lo, hi):
     except Exception:
         return lo
 
-def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, floor_dims_by_name, fallback_vendor, fallback_model):
+def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, floor_dims_by_name, fallback_vendor, fallback_model, force_fallback=False):
     aps_out = []
     for i, ap in enumerate(esx_aps or []):
         loc = ap.get("location") or {}
@@ -280,10 +322,14 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
             else:
                 coords = [{"coordinate_xyz": {"x": float(x_px), "y": float(y_px), "z": 0.0, "unit": "pixels"}}]
 
-        # Force known model for importer visibility (keep originals as *_original)
+        # Preserve catalog identifiers verbatim: casing and punctuation may matter.
         v_orig = (ap.get("vendor") or ap.get("manufacturer") or "").strip()
         m_orig = (ap.get("model") or "").strip()
-        v, m = (fallback_vendor or "ubiquiti").lower(), (fallback_model or "uap-ac-pro").lower()
+        v, m = v_orig, m_orig
+        if force_fallback or not (v and m):
+            v, m = fallback_vendor, fallback_model
+            info(f"AP {ap.get('name') or i}: using fallback {v}/{m} "
+                 f"({'forced' if force_fallback else 'source vendor/model incomplete'})")
 
         radios = [
             {"id": 0, "radio_function": "CLIENT_ACCESS", "band": "FREQ_2.4GHZ",
@@ -291,18 +337,12 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
             {"id": 1, "radio_function": "CLIENT_ACCESS", "band": "FREQ_5GHZ",
              "channel": 36, "channel_width": "80_MHz", "transmit_power": 6, "mimo_chains": 2},
         ]
-        antennas = [{
-            "vendor": v, "model": m,
-            "bands": [{"band": "FREQ_2.4GHZ"}, {"band": "FREQ_5GHZ"}]
-        }]
-
         ap_out = {
             "name": ap.get("name") or f"AP-{i}",
             "floorplan_name": floor_name,
             "manufacturer": v,
             "model": m,
             "dot11_radios": radios,
-            "antennas": antennas,
             "coordinates": coords,
             "orientation": {"rotation": 0, "tilt": 0},
             "display_color": "#4687f0",
@@ -336,6 +376,8 @@ def main():
     ap.add_argument("--all-materials", action="store_true", help="Export all ESX wall types (default: only used)")
     ap.add_argument("--fallback-manufacturer", default="ubiquiti", help="AP vendor fallback")
     ap.add_argument("--fallback-model", default="uap-ac-pro", help="AP model fallback")
+    ap.add_argument("--force-fallback-model", action="store_true",
+                    help="Replace all AP models with the fallback vendor/model (legacy behavior)")
     args = ap.parse_args()
 
     z, esx_floors, wall_segs, wall_pts, wall_types, esx_aps, esx_radios, meters_per_unit, project_title = load_esx_structures(args.esx)
@@ -347,7 +389,7 @@ def main():
     floor_name_by_id = {f["id"]: (f.get("name") or "Floor") for f in esx_floors}
     floor_dims_by_name = {f["name"]: (f["dimensions"][0]["width"], f["dimensions"][0]["length"]) for f in floors_out}
     aps_out = build_aps(esx_aps, floor_name_by_id, floor_img_h, meters_per_unit, floor_dims_by_name,
-                        args.fallback_manufacturer, args.fallback_model)
+                        args.fallback_manufacturer, args.fallback_model, args.force_fallback_model)
 
     oi = {
         "openintent_version": "2.0.2",

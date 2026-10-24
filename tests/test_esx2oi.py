@@ -151,6 +151,80 @@ class ConversionTests(unittest.TestCase):
         self.files["accessPoints.json"] = {"accessPoints": []}
         self.assertNotIn("accesspoints", self.convert())
 
+    def test_source_ap_model_preserved_verbatim(self):
+        self.files["accessPoints.json"] = {"accessPoints": [
+            {"name": "Ruckus AP", "vendor": "Ruckus", "model": "R850"},
+            {"name": "Cisco AP", "manufacturer": "Cisco", "model": "C9130AXI-E"},
+        ]}
+        for ap, expected in zip(self.convert()["accesspoints"],
+                                [("Ruckus", "R850"), ("Cisco", "C9130AXI-E")]):
+            self.assertEqual((ap["manufacturer"], ap["model"]), expected)
+            # An AP model is not an antenna model. Let the importer use its catalog.
+            self.assertNotIn("antennas", ap)
+
+    def test_incomplete_ap_identity_uses_whole_fallback_pair(self):
+        for identity in ({}, {"vendor": "Cisco"}, {"model": "R850"},
+                         {"vendor": "Cisco", "model": "  "}):
+            with self.subTest(identity=identity):
+                self.files["accessPoints.json"] = {"accessPoints": [{"name": "AP", **identity}]}
+                ap = self.convert("--fallback-manufacturer", "Example",
+                                  "--fallback-model", "Known-Model")["accesspoints"][0]
+                self.assertEqual((ap["manufacturer"], ap["model"]), ("Example", "Known-Model"))
+                self.assertEqual(ap["manufacturer_original"], identity.get("vendor", "").strip())
+                self.assertEqual(ap["model_original"], identity.get("model", "").strip())
+
+    def test_force_fallback_model(self):
+        self.files["accessPoints.json"] = {"accessPoints": [
+            {"name": "AP", "vendor": "Ruckus", "model": "R850"}
+        ]}
+        ap = self.convert("--force-fallback-model")["accesspoints"][0]
+        self.assertEqual((ap["manufacturer"], ap["model"]), ("ubiquiti", "uap-ac-pro"))
+        self.assertEqual(ap["model_original"], "R850")
+
+    def test_coverage_and_exclusions_use_correct_floor_and_y_origin(self):
+        self.files["floorPlans.json"]["floorPlans"].append(
+            {"id": "floor-2", "name": "Upper", "width": 100, "height": 80})
+        points = [{"x": 10, "y": 20}, {"x": 60, "y": 20}, {"x": 60, "y": 50}]
+        self.files["areas.json"] = {"areas": [
+            {"floorPlanId": "floor-1", "area": points},
+            {"floorPlanId": "floor-2", "area": list(reversed(points))},
+            {"floorPlanId": "floor-1", "status": "DELETED"},
+        ]}
+        self.files["exclusionAreas.json"] = {"exclusionAreas": [
+            {"floorPlanId": "floor-1", "area": points}
+        ]}
+        floors = self.convert()["floorplans"]
+        self.assertEqual([len(f["coverage_areas"]) for f in floors], [2, 1])
+        included, excluded = floors[0]["coverage_areas"]
+        self.assertFalse(included["exclusion"])
+        self.assertTrue(excluded["exclusion"])
+        expected = [{"coordinate_xyz": {"x": x, "y": y, "z": 0.0, "unit": "pixels"}}
+                    for x, y in [(10.0, 60.0), (60.0, 60.0), (60.0, 30.0)]]
+        self.assertEqual(included["area"]["coordinates"], expected)
+        self.assertEqual(excluded["area"]["coordinates"], expected)
+        self.assertEqual(floors[1]["coverage_areas"][0]["area"]["coordinates"], expected[::-1])
+
+    def test_coverage_unknown_floor_is_rejected(self):
+        self.files["areas.json"] = {"areas": [{"floorPlanId": "missing", "area": []}]}
+        self.assertIn("unknown floor", self.convert(success=False).stderr)
+
+    def test_malformed_coverage_is_rejected(self):
+        for points in (None, [], [{"x": 1, "y": 2}] * 2,
+                       [{"x": "1", "y": 2}] * 3,
+                       [{"x": 1, "y": float("nan")}] * 3,
+                       [{"x": True, "y": 2}] * 3):
+            with self.subTest(points=points):
+                self.files["areas.json"] = {"areas": [{"floorPlanId": "floor-1", "area": points}]}
+                self.convert(success=False)
+
+    def test_empty_coverage_and_attenuation_areas_are_not_coverage(self):
+        self.files["areas.json"] = {"areas": []}
+        self.files["exclusionAreas.json"] = {"exclusionAreas": []}
+        self.files["attenuationAreas.json"] = {"attenuationAreas": [
+            {"floorPlanId": "floor-1", "area": [{"x": 1, "y": 2}] * 3}
+        ]}
+        self.assertEqual(self.convert()["floorplans"][0]["coverage_areas"], [])
+
     def test_unplaced_aps_have_no_invented_floor_or_empty_coordinates(self):
         for location in (None, {}, {"floorPlanId": "unknown"}):
             with self.subTest(location=location):
