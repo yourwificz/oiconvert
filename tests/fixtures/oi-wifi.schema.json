@@ -1,0 +1,1160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Wi-fi presentation schema",
+  "title": "oi_wifi",
+  "$id": "oi_wifi",
+  "type": "object",
+  "required": [
+    "openintent_version"
+  ],
+  "properties": {
+    "accesspoints": {
+      "type": "array",
+      "description": "An array of access_points",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/accesspoint"
+      }
+    },
+    "switches": {
+      "type": "array",
+      "description": "An array of network switches",
+      "items": {
+        "$ref": "#/$defs/switch"
+      }
+    },
+    "floorplans": {
+      "type": "array",
+      "description": "An array of floorplans",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/floorplan"
+      }
+    },
+    "building": {
+      "description": "A building that groups floorplans together with vertical ordering and transformation capabilities",
+      "$ref": "#/$defs/building"
+    },
+    "wall_materials": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/material"
+      }
+    },
+    "area_materials": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/material"
+      }
+    },
+    "openintent_version": {
+      "description": "Version of the openintent-wifi model",
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "accesspoint": {
+      "type": "object",
+      "description": "Representation of an access-point",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique name of access point."
+        },
+        "floorplan_name": {
+          "type": "string",
+          "description": "Name of floorplan to which this access-point belongs."
+        },
+        "building_name": {
+          "type": "string",
+          "description": "Name of the building with which to look for floorplan_name"
+        },
+        "asset_tag": {
+          "type": "string",
+          "description": "Assigned asset tag"
+        },
+        "serial_number": {
+          "type": "string",
+          "description": "Serial number of this access point."
+        },
+        "claim_code": {
+          "type": "string",
+          "description": "Vendor registration or claim code."
+        },
+        "mac_address": {
+          "type": "string",
+          "description": "MAC Address of an access_point. Should be described in the format: 01:23:45:67:89:0a where it is 2 characters separated by colons and letters are lower case.\n",
+          "pattern": "^([a-f0-9]{2}:){5}[a-f0-9]{2}$"
+        },
+        "manufacturer": {
+          "type": "string",
+          "description": "The manufacturer name for this access point.\n"
+        },
+        "model": {
+          "type": "string",
+          "description": "The model number of this particular access point"
+        },
+        "sku": {
+          "type": "string",
+          "description": "SKU part number for this specific access-point."
+        },
+        "connected_switch": {
+          "type": "object",
+          "description": "Information about the switch this access point is connected to",
+          "properties": {
+            "switch_name": {
+              "type": "string",
+              "description": "Reference to the name of the switch this access point is connected to"
+            },
+            "port": {
+              "type": "string",
+              "description": "The port on the switch that this access point is connected to"
+            },
+            "vlan": {
+              "type": "integer",
+              "description": "VLAN ID assigned to this access point connection"
+            },
+            "closet_name": {
+              "type": "string",
+              "description": "Name or identifier of the closet where the connected switch is located"
+            },
+            "switch_id": {
+              "type": "string",
+              "description": "vendor id of the switch which this access point is connected."
+            }
+          }
+        },
+        "dot11_radios": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Array of dot11_radio elements.",
+          "items": {
+            "$ref": "#/$defs/dot11_radio"
+          }
+        },
+        "ssids": {
+          "type": "array",
+          "description": "List of SSIDs available on this access-point",
+          "items": {
+            "type": "string"
+          }
+        },
+        "antennas": {
+          "type": "array",
+          "description": "Array of antennas connected to this access-point.",
+          "items": {
+            "$ref": "#/$defs/antenna"
+          }
+        },
+        "rf_connectors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rf_connector"
+          }
+        },
+        "reference_markers": {
+          "type": "array",
+          "description": "List of reference markers",
+          "items": {
+            "$ref": "#/$defs/reference_marker"
+          }
+        },
+        "regulatory_domain": {
+          "type": "string"
+        },
+        "ethernet_ports": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "orientation": {
+          "description": "If there are no antennas defined, or the antennas are integrated, the orientation for access-point should be used.",
+          "$ref": "#/$defs/orientation"
+        },
+        "coordinates": {
+          "description": "Array of coordinate objects which contain both xyz and lat_long coordinate systems. This allows all objects to share multi-coordinate systems.\n",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/coordinate"
+          }
+        },
+        "display_color": {
+          "type": "string",
+          "description": "Hex color code for visualizing access points. Has no inherent intent, but for visualization purposes. Should start with \"#\" to indicate a hex color value. Example '#AC7400'",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        }
+      }
+    },
+    "switch": {
+      "type": "object",
+      "description": "Representation of a network switch",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique name of switch."
+        },
+        "floorplan_name": {
+          "type": "string",
+          "description": "Name of floorplan to which this switch belongs."
+        },
+        "building_name": {
+          "type": "string",
+          "description": "Name of the building with which to look for floorplan_name"
+        },
+        "asset_tag": {
+          "type": "string",
+          "description": "Assigned asset tag"
+        },
+        "serial_number": {
+          "type": "string",
+          "description": "Serial number of this switch."
+        },
+        "manufacturer": {
+          "type": "string",
+          "description": "The manufacturer name for this switch."
+        },
+        "model": {
+          "type": "string",
+          "description": "The model number of this particular switch"
+        },
+        "sku": {
+          "type": "string",
+          "description": "SKU part number for this specific switch."
+        },
+        "ip_address": {
+          "type": "string",
+          "description": "Management IP address of the switch",
+          "format": "ipv4"
+        },
+        "closet_name": {
+          "type": "string",
+          "description": "Name or identifier of the closet (Intermediate Distribution Frame) room/closet where this switch is located"
+        },
+        "coordinates": {
+          "description": "Array of coordinate objects which contain both xyz and lat_long coordinate systems.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/coordinate"
+          }
+        },
+        "display_color": {
+          "type": "string",
+          "description": "Hex color code for visualizing the switch. Has no inherent intent, but for visualization purposes.",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "vendor_id": {
+          "type": "string",
+          "description": "Unique identifier of the switch.\n"
+        },
+        "copper_port_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "number of RJ-45 copper ports."
+        },
+        "modular_port_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "number of modular ports (SFP/SFP+/SFP28/QSFP)"
+        },
+        "poe_budget": {
+          "type": "number",
+          "description": "total available power in watts."
+        },
+        "rack_units": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "number of rack units (RU) required for the device."
+        }
+      }
+    },
+    "floorplan": {
+      "type": "object",
+      "required": [
+        "name",
+        "dimensions"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique name of floorplan (must be unique in the openintent payload.)"
+        },
+        "vendor_id": {
+          "type": "string",
+          "description": "Vendor's ID for this floorplan"
+        },
+        "map_uri": {
+          "type": "string",
+          "description": "URI where to retrieve the map. Not all URIs will be resolvable by all systems.",
+          "format": "uri"
+        },
+        "building_name": {
+          "type": "string",
+          "description": "Name of the building with which to look for floorplan_name"
+        },
+        "project_name": {
+          "type": "string",
+          "description": "Name of the project/file"
+        },
+        "floor_id": {
+          "type": "string",
+          "description": "String representation of the floor id (Example: Ground, 1st, 3, etc)\n"
+        },
+        "rotation": {
+          "type": "number",
+          "description": "Rotation of the floorplan from native orientation"
+        },
+        "dimensions": {
+          "type": "array",
+          "description": "Dimensions of the floorplan",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/dimension"
+          }
+        },
+        "wall_segments": {
+          "type": "array",
+          "description": "Segments of wall on floorplan",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/wall_segment"
+          }
+        },
+        "reference_markers": {
+          "type": "array",
+          "description": "List of reference markers",
+          "items": {
+            "$ref": "#/$defs/reference_marker"
+          }
+        },
+        "attenuation_areas": {
+          "type": "array",
+          "description": "List of areas on the floorplan",
+          "items": {
+            "$ref": "#/$defs/attenuation_area"
+          }
+        },
+        "coverage_areas": {
+          "type": "array",
+          "description": "List of coverage areas on the floorplan",
+          "items": {
+            "$ref": "#/$defs/coverage_area"
+          }
+        },
+        "holes_in_floor": {
+          "type": "array",
+          "description": "List of areas on the floorplan",
+          "items": {
+            "$ref": "#/$defs/hole_in_floor"
+          }
+        },
+        "closets": {
+          "type": "array",
+          "description": "array of closet objects.",
+          "items": {
+            "$ref": "#/$defs/closet"
+          }
+        },
+        "survey_paths": {
+          "type": "array",
+          "description": "list of survey paths.",
+          "items": {
+            "$ref": "#/$defs/survey_path"
+          }
+        }
+      }
+    },
+    "closet": {
+      "type": "object",
+      "description": "Representation of an equipment closet (IDF/MDF)",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of closet"
+        },
+        "vendor_id": {
+          "type": "string",
+          "description": "Vendor ID for the closet"
+        },
+        "type": {
+          "type": "string",
+          "description": "Type of network equipment closet (IDF=Intermediate Distribution Frame, MDF=Main Distribution Frame)",
+          "enum": [
+            "IDF",
+            "MDF",
+            "OTHER"
+          ]
+        },
+        "coordinates": {
+          "description": "Array of coordinate objects which contain both xyz and lat_long coordinate systems. This allows all objects to share multi-coordinate systems.\n",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/coordinate"
+          }
+        }
+      }
+    },
+    "dot11_radio": {
+      "type": "object",
+      "description": "A dot11 radio object",
+      "required": [
+        "id",
+        "radio_function"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Radio id if one is known"
+        },
+        "radio_function": {
+          "type": "string",
+          "enum": [
+            "CLIENT_ACCESS",
+            "MONITORING",
+            "BACKHAUL",
+            "DISABLED"
+          ]
+        },
+        "band": {
+          "$ref": "#/$defs/frequency_bands"
+        },
+        "channel": {
+          "type": "integer",
+          "description": "Channel is the primary 20MHZ channel\n"
+        },
+        "channel_width": {
+          "$ref": "#/$defs/channel_width"
+        },
+        "channel_assignment": {
+          "description": "This defines if radios channels are manually assigned (human) or dynamically assigned by tooling.\n",
+          "type": "string",
+          "enum": [
+            "AUTOMATIC",
+            "MANUAL"
+          ]
+        },
+        "secondary_channel": {
+          "type": "integer",
+          "description": "Secondary channel based on 802.11ac notation (center channel). Used with 80+80 and 160+160 channel width configurations to describe the secondary channel (not containing primary channel).\n"
+        },
+        "transmit_power": {
+          "type": "integer",
+          "description": "Conducted, per-chain power."
+        },
+        "transmit_eirp": {
+          "type": "number",
+          "description": "EIRP, requires antenna gain to calculate"
+        },
+        "mimo_chains": {
+          "type": "integer",
+          "description": "Number of radio chains this radio is operating with\n"
+        }
+      }
+    },
+    "antenna": {
+      "type": "object",
+      "required": [
+        "vendor",
+        "model"
+      ],
+      "properties": {
+        "vendor": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "leads": {
+          "type": "integer",
+          "description": "The number of leads an antenna has.\n"
+        },
+        "extention": {
+          "type": "object",
+          "properties": {
+            "is_extended": {
+              "description": "Is the antenna extended with an RF extension cable?\n",
+              "type": "boolean"
+            },
+            "vendor": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "unit_length": {
+              "description": "Unit for describing the length of the extension\n",
+              "type": "string",
+              "enum": [
+                "feet",
+                "meters"
+              ]
+            },
+            "length": {
+              "description": "Length of the extension in the unit_length\n",
+              "type": "number"
+            },
+            "losses": {
+              "description": "Array of losses per frequency band.\n",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "loss": {
+                    "type": "number",
+                    "description": "Loss in dB/100m\n"
+                  },
+                  "frequency": {
+                    "$ref": "#/$defs/frequency_bands"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "antenna_type": {
+          "type": "string",
+          "description": "Indicates if the antenna is classified as an omnidirectional or a directional antenna.\n",
+          "enum": [
+            "OMNIDIRECTIONAL",
+            "DIRECTIONAL"
+          ]
+        },
+        "bands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "band": {
+                "$ref": "#/$defs/frequency_bands"
+              },
+              "gain": {
+                "type": "number",
+                "description": "Gain in dBi"
+              }
+            }
+          }
+        },
+        "rf_connectors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rf_connector"
+          }
+        },
+        "orientation": {
+          "$ref": "#/$defs/orientation"
+        },
+        "coordinate": {
+          "$ref": "#/$defs/coordinate"
+        }
+      }
+    },
+    "rf_connector": {
+      "type": "object",
+      "description": "Details about RF connectors that would be present on an antenna or Accesspoint.\n",
+      "properties": {
+        "connector_type": {
+          "type": "string",
+          "enum": [
+            "RP_SMA",
+            "RP_TNC",
+            "SMA",
+            "TNC",
+            "Type-N"
+          ]
+        },
+        "gender": {
+          "type": "string",
+          "description": "Describes the gender of the RF connector\n",
+          "enum": [
+            "CONNECTOR_MALE",
+            "CONNECTOR_FEMALE"
+          ]
+        },
+        "frequency_bands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/frequency_bands"
+          }
+        }
+      }
+    },
+    "channel_width": {
+      "type": "string",
+      "description": "Represents channel width configurations as a string\n",
+      "enum": [
+        "20_MHz",
+        "40_MHz",
+        "80_MHz",
+        "160_MHz",
+        "320_MHz",
+        "80+80_MHz",
+        "160+160_MHz"
+      ]
+    },
+    "coordinate_xyz": {
+      "type": "object",
+      "description": "A coordinate that references cartesian coordinates using x,y,z\n",
+      "required": [
+        "x",
+        "y",
+        "unit"
+      ],
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "Coordinate in X dimension represented as a number",
+          "minimum": 0
+        },
+        "y": {
+          "type": "number",
+          "description": "Coordinate in Y dimension represented as a number",
+          "minimum": 0
+        },
+        "z": {
+          "type": "number",
+          "description": "Coordinate in Z dimension as height from floor represented as a number\n"
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "feet",
+            "pixels",
+            "meters"
+          ]
+        }
+      }
+    },
+    "coordinate_lat_long": {
+      "type": "object",
+      "description": "A coordinate that references geospatial coordinates using using lat/long and altitude\n",
+      "required": [
+        "latitude",
+        "longitude"
+      ],
+      "properties": {
+        "latitude": {
+          "type": "number",
+          "description": "Latitude expressed as ISO 6709 in degrees",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Longitude expressed as ISO 6709 in degrees",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "elevation": {
+          "type": "number",
+          "description": "Height in meters above sea level"
+        }
+      }
+    },
+    "coordinate": {
+      "type": "object",
+      "description": "A coordinate with both sets of x/y/z and lat/long",
+      "properties": {
+        "coordinate_xyz": {
+          "$ref": "#/$defs/coordinate_xyz"
+        },
+        "coordinate_lat_long": {
+          "$ref": "#/$defs/coordinate_lat_long"
+        }
+      }
+    },
+    "frequency_bands": {
+      "type": "string",
+      "description": "Bands that an antenna or radio operates in.",
+      "enum": [
+        "FREQ_2.4GHZ",
+        "FREQ_5GHZ",
+        "FREQ_6GHZ"
+      ]
+    },
+    "orientation": {
+      "type": "object",
+      "description": "Object that describes the orientation of an object. All descriptions can be referenced as a plane in flight.\n",
+      "properties": {
+        "rotation": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 360,
+          "description": "Describes the rotation of the device in degrees where 0 is up on the floorplan orientation. For omnidirectional APs, if looking at the AP on the ceiling, the direction points toward the top of the vendor logo. For directional antennas/APs, the peak beamwidth should point in this direction. AKA yaw.\n"
+        },
+        "tilt": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "description": "Describes the tilt of the device in degrees. For integrated antenna APs or omnidirectional antenna, 0 describes the default orientation. For directional APs, 0 describes the antenna as pointed horizontal, with positive values tilting up, and negative values pointing down. AKA pitch.\n"
+        },
+        "roll": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180,
+          "description": "Describes the rotation of the device in axis of rotation/tilt. 0 describes the devices default orientation. This will normally be zero in most scenarios. Would be used to rotate and antenna from vertical to horizontal polarization. AKA roll.\n"
+        }
+      }
+    },
+    "dimension": {
+      "type": "object",
+      "description": "Dimension of a floorplan where the origin is located in the lower left corner, making all references to location positive values\n",
+      "required": [
+        "length",
+        "width",
+        "unit"
+      ],
+      "properties": {
+        "length": {
+          "type": "number",
+          "description": "y-dimension of the floorplan",
+          "minimum": 0
+        },
+        "width": {
+          "type": "number",
+          "description": "x-dimension of the floorplan",
+          "minimum": 0
+        },
+        "height": {
+          "type": "number",
+          "description": "z-dimension of the floor (default height)",
+          "minimum": 0
+        },
+        "unit": {
+          "type": "string",
+          "description": "The dimension unit for length, width, height.",
+          "enum": [
+            "pixels",
+            "meters",
+            "feet"
+          ]
+        }
+      }
+    },
+    "wall_segment": {
+      "type": "object",
+      "description": "Represents a line segment of a wall on a floorplan. Each segment requires a start, and end and a description for the wall type.\n",
+      "required": [
+        "wall_type",
+        "start_point",
+        "end_point"
+      ],
+      "properties": {
+        "wall_type": {
+          "type": "string",
+          "description": "Name of wall type. Can be standalone or match a wall_material defined in main oi-wifi Preference is to define a wall type instead of specifying each value for each wall type.\n"
+        },
+        "start_point": {
+          "description": "Starting point of the segment",
+          "$ref": "#/$defs/wall_point"
+        },
+        "end_point": {
+          "description": "Ending point of the segment",
+          "$ref": "#/$defs/wall_point"
+        },
+        "display_color": {
+          "type": "string",
+          "description": "Used if wall_material is not defined. Hex color code for visualizing access points. Has no inherent intent, but for visualization purposes. Should start with \"#\" to indicate a hex color value. Example '#AC7400'\n",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "thickness": {
+          "type": "number",
+          "description": "Used if wall_material is not defined. Thickness in meters of the wall.",
+          "minimum": 0
+        },
+        "height": {
+          "type": "number",
+          "description": "Used if wall_material is not defined. Height of the top of the wall from the floor.",
+          "minimum": 0
+        },
+        "bottom_height": {
+          "type": "number",
+          "description": "Used if wall_material is not defined. If wall does not start at floor, define at what height from floor",
+          "minimum": 0
+        }
+      }
+    },
+    "wall_point": {
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "description": "Two-dimensional coordinate of a wall point",
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "x-coordinate of the point"
+        },
+        "y": {
+          "type": "number",
+          "description": "y-coordinate of the point"
+        }
+      }
+    },
+    "reference_marker": {
+      "type": "object",
+      "description": "A reference marker to denote a location on the floorplan. Can be used to provide notes, or a translation between coordinate systems.\n",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique name of the reference marker."
+        },
+        "coordinate": {
+          "$ref": "#/$defs/coordinate"
+        },
+        "reference_text": {
+          "type": "string",
+          "description": "Text string from reference"
+        }
+      }
+    },
+    "material": {
+      "type": "object",
+      "description": "Object that defines the properties of wall material",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name for wall material"
+        },
+        "itu_material_type": {
+          "type": "string",
+          "description": "ITU Wall Material if known"
+        },
+        "rf_properties": {
+          "$ref": "#/$defs/rf_properties"
+        },
+        "thickness_m": {
+          "type": "number",
+          "description": "Thickness of the wall in meters. Do not fake wall thickness with arbitrary formulas. If wall thickness is not defined, omit and use flat attenuation values.\n",
+          "minimum": 0
+        },
+        "bottom_height": {
+          "type": "number",
+          "description": "For walls, if the wall does not start at the floor, this allows you to specify the height the bottom of the wall is at.\n",
+          "minimum": 0
+        },
+        "top_height": {
+          "type": "number",
+          "description": "For walls, the top_height is the height in meters of the top of the wall.\n",
+          "minimum": 0
+        },
+        "display_color": {
+          "type": "string",
+          "description": "Used if wall_material is not defined. Hex color code for visualizing access points. Has no inherent intent, but for visualization purposes. Should start with \"#\" to indicate a hex color value. Example '#AC7400'\n",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        }
+      }
+    },
+    "rf_properties": {
+      "type": "object",
+      "properties": {
+        "attenuation_flat": {
+          "type": "number",
+          "description": "Flat attenuation value. Object attenuates this value dB regardless of thickness.\n"
+        },
+        "attenuation_per_m": {
+          "type": "number",
+          "description": "Attenuation in dB per meter of thickness. Should multiply by thickness to calculate flat attenuation\n"
+        }
+      }
+    },
+    "area": {
+      "type": "object",
+      "description": "An area is defined as a polygon with a list of coordinates. These coordinates must be colinear in order and the first and last must be colinear with each other.\n",
+      "required": [
+        "coordinates"
+      ],
+      "properties": {
+        "coordinates": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "$ref": "#/$defs/coordinate"
+          }
+        }
+      }
+    },
+    "attenuation_area": {
+      "type": "object",
+      "required": [
+        "area",
+        "area_material"
+      ],
+      "properties": {
+        "area": {
+          "$ref": "#/$defs/area"
+        },
+        "area_material": {
+          "$ref": "#/$defs/material"
+        }
+      }
+    },
+    "coverage_area": {
+      "type": "object",
+      "required": [
+        "area"
+      ],
+      "description": "Area included/excluded for wifi coverage",
+      "properties": {
+        "area": {
+          "$ref": "#/$defs/area"
+        },
+        "exclusion": {
+          "description": "For exclusion areas, the flag would be true.\n",
+          "type": "boolean"
+        }
+      }
+    },
+    "hole_in_floor": {
+      "type": "object",
+      "required": [
+        "area"
+      ],
+      "properties": {
+        "area": {
+          "$ref": "#/$defs/area"
+        },
+        "inverted": {
+          "description": "Inverted hole-in-floor objects are used to describe a hole that is everywhere but the defined area. Example would be If you wanted to show a building, but wanted a hole in floor for to indicate that exterior to the building was a hole. When not present, assumption is the value is false.\n",
+          "type": "boolean"
+        }
+      }
+    },
+    "path_point": {
+      "description": "A point to be used along a path with reference to the data structure.\n",
+      "type": "object",
+      "properties": {
+        "coordinate": {
+          "$ref": "#/$defs/coordinate"
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Timestamp in Unix epoch format.  example shows nanosecond precision.\n",
+          "example": 1665345722.1234567
+        },
+        "path_indicator": {
+          "type": "string",
+          "enum": [
+            "START",
+            "END"
+          ],
+          "description": "This indicates if the point is used to start a path segment, or end a path segment. Point type surveys should include both a START and a END with the same coordinate.  For middle points, this is not used.\n"
+        }
+      }
+    },
+    "survey_path": {
+      "description": "A series of path_points with a reference to a data uri.  For example, the surveyd data is included in a timestamped PCAP file. You can have multiple survey_path objects pointed at a single PCAP.\n",
+      "type": "object",
+      "properties": {
+        "path_data_uri": {
+          "type": "string",
+          "description": "URI reference to path data. Not all URIs will be resolvable by all systems.",
+          "format": "uri"
+        },
+        "path_data_type": {
+          "type": "string",
+          "enum": [
+            "PCAP",
+            "OTHER"
+          ]
+        },
+        "survey_device_model": {
+          "description": "path device model",
+          "type": "string",
+          "example": "WLANPI-Go"
+        },
+        "survey_device_sw_version": {
+          "type": "string",
+          "description": "Sofware version of the survey device.",
+          "example": "1.0.0"
+        },
+        "survey_device_identifier": {
+          "type": "string",
+          "description": "Unique identifier of the survey device",
+          "example": "JoelWLANPI-aa:bb:cc"
+        },
+        "host_device_platform": {
+          "type": "string",
+          "description": "platform of the host device. For example, if using a survey tool like a WLAN-PI, this field would describe the controlling device (e.g., \"iPhone Pro Max 16\").\n",
+          "example": "iPhone Pro Max 16"
+        },
+        "host_device_sw_version": {
+          "type": "string",
+          "description": "software version of host device.",
+          "example": "iOS 26.1"
+        },
+        "path_type": {
+          "description": "To keep logic simple for implementers, we should specify if the points in this path are Point (stop and go) or a Continuous (line) type survey.\n",
+          "type": "string",
+          "enum": [
+            "POINT",
+            "CONTINUOUS"
+          ]
+        },
+        "path_points": {
+          "description": "Each path in the path points must have a START and END point. There can be multiple paths within the path_points, but each must contain a START and END point.  These points are ordered from start to end.\n",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path_point"
+          },
+          "minItems": 2
+        }
+      }
+    },
+    "offset_value": {
+      "type": "object",
+      "description": "A distance value with unit, used for translation/offset operations.\n",
+      "required": [
+        "value",
+        "unit"
+      ],
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "The offset distance value (can be positive or negative)"
+        },
+        "unit": {
+          "type": "string",
+          "description": "Unit for the offset value",
+          "enum": [
+            "pixels",
+            "meters",
+            "feet"
+          ]
+        }
+      }
+    },
+    "floor_transform": {
+      "type": "object",
+      "description": "2D transformation parameters for positioning and orienting a floorplan within a building coordinate system. Transformations are applied in order: scale, then rotation, then translation (offset).\n",
+      "properties": {
+        "scale_x": {
+          "type": "number",
+          "description": "Horizontal scale factor to apply to the floorplan. A value of 1.0 means no scaling. Values greater than 1.0 enlarge, values less than 1.0 shrink. Must be a positive number.\n",
+          "minimum": 0,
+          "exclusiveMinimum": true
+        },
+        "scale_y": {
+          "type": "number",
+          "description": "Vertical scale factor to apply to the floorplan. A value of 1.0 means no scaling. Values greater than 1.0 enlarge, values less than 1.0 shrink. Must be a positive number.\n",
+          "minimum": 0,
+          "exclusiveMinimum": true
+        },
+        "rotation": {
+          "type": "number",
+          "description": "Rotation in degrees to apply to the floorplan around its origin (lower-left corner). Positive values rotate counter-clockwise. This is applied after scaling and before translation.\n",
+          "minimum": 0,
+          "maximum": 360
+        },
+        "x_offset": {
+          "description": "Horizontal (X-axis) offset to shift the floorplan. Applied after scaling and rotation. Positive values shift right.\n",
+          "$ref": "#/$defs/offset_value"
+        },
+        "y_offset": {
+          "description": "Vertical (Y-axis) offset to shift the floorplan. Applied after scaling and rotation. Positive values shift up.\n",
+          "$ref": "#/$defs/offset_value"
+        }
+      }
+    },
+    "building_floor": {
+      "type": "object",
+      "description": "A floor within a building that references a floorplan and provides transformation parameters for positioning the floorplan within the building coordinate system.\n",
+      "required": [
+        "floorplan_name",
+        "floor_level"
+      ],
+      "properties": {
+        "floorplan_name": {
+          "type": "string",
+          "description": "Reference to the name of a floorplan defined in the floorplans array. The floorplan must exist and its name must be unique.\n"
+        },
+        "floor_level": {
+          "type": "integer",
+          "description": "Integer representing the vertical position of this floor within the building. Higher values represent floors higher in the building. Floors are stacked top to bottom based on this value. Example: Ground floor = 0, First floor = 1, Basement = -1\n"
+        },
+        "floor_label": {
+          "type": "string",
+          "description": "Human-readable label for the floor (e.g., \"Ground\", \"Mezzanine\", \"Basement\", \"Roof\"). Used for display purposes.\n"
+        },
+        "transform": {
+          "description": "2D transformation parameters for positioning and orienting this floorplan within the building coordinate system.\n",
+          "$ref": "#/$defs/floor_transform"
+        }
+      }
+    },
+    "building_address": {
+      "type": "object",
+      "description": "Physical address information for a building. Uses international-friendly field names to support addresses worldwide.\n",
+      "properties": {
+        "address_lines": {
+          "type": "array",
+          "description": "Flexible array of address lines (e.g., street address, suite number, building name). Supports any international address format.\n",
+          "items": {
+            "type": "string"
+          }
+        },
+        "locality": {
+          "type": "string",
+          "description": "City, town, village, or equivalent locality name."
+        },
+        "administrative_area": {
+          "type": "string",
+          "description": "State, province, region, prefecture, or equivalent administrative division."
+        },
+        "postal_code": {
+          "type": "string",
+          "description": "Postal code, ZIP code, or equivalent."
+        },
+        "country": {
+          "type": "string",
+          "description": "Country name or ISO 3166-1 alpha-2 code (e.g., \"US\", \"JP\", \"DE\"). ISO alpha-2 codes are recommended for interoperability.\n"
+        }
+      }
+    },
+    "building": {
+      "type": "object",
+      "description": "Representation of a building that groups multiple floorplans together with vertical ordering and transformation capabilities.\n",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique name of the building (must be unique in the openintent payload). This name is referenced by floorplan.building_name, accesspoint.building_name, and switch.building_name properties.\n"
+        },
+        "vendor_id": {
+          "type": "string",
+          "description": "Vendor's ID for this building."
+        },
+        "address": {
+          "description": "Physical address information for the building.",
+          "$ref": "#/$defs/building_address"
+        },
+        "coordinate": {
+          "description": "Geospatial coordinate for the building location. Typically represents the building centroid position.\n",
+          "$ref": "#/$defs/coordinate"
+        },
+        "floors": {
+          "type": "array",
+          "description": "Array of floor references with transformation properties. Floors are ordered top to bottom (highest floor_level is at the top of the building).\n",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/building_floor"
+          }
+        }
+      }
+    }
+  }
+}

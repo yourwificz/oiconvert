@@ -46,6 +46,8 @@ Options (excerpt):
   - Dimensions in **pixels / meters / feet**; pixel *height* = ceiling height in **pixels** (not image height)
   - `rotation: 0`, `project_name`, and reserved `reference_markers`
 - **Walls & Materials**
+  - Floorplan-only projects are supported even when Ekahau omits wall JSON files.
+    If wall segments exist, `wallPoints.json` and `wallTypes.json` remain required.
   - Export only materials actually used on walls (or all via `--all-materials`)
   - Names prefixed with `[Imported] ...`; attenuation rounded to **1 decimal**
 - **Access Points**
@@ -79,8 +81,28 @@ Options (excerpt):
 ---
 
 ## Interoperability notes
+- Empty `wall_segments` and `accesspoints` properties are omitted, as required by
+  the OpenIntent 2.x schema (`minItems: 1` when present).
 - **Confirmed importer:** Hamina Network Planner (imports/exports OpenIntent `.zip` and documents supported fields).  
 - **Ecosystem status:** OpenIntent is evolving. If you use another tool, please test and open an issue/PR with results and sample files.
+
+---
+
+## Regression tests
+
+From the repository root:
+
+```bash
+python3 -m pip install -r requirements-test.txt
+python3 -m unittest discover -s tests -v
+```
+
+Tests generate synthetic ESX archives covering floorplan-only projects, all eight
+combinations of missing/empty wall files, standard walls and APs, mixed floors,
+`--all-materials`, and missing or malformed input data. Successful conversions
+are checked against a pinned, unmodified official OpenIntent 2.x JSON schema,
+including the embedded images. No network access is needed to run the tests.
+The reporter's original ESX and a live Hamina import have not been tested.
 
 ---
 
