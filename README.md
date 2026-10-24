@@ -3,16 +3,16 @@
 ## About oiconvert
 A tiny toolkit for OpenIntent conversions.
 
-- `esx2oi.py` — Ekahau **.esx → OpenIntent 2.x** ZIP (tested primarily with Hamina)
+- `esx2oi.py` — Ekahau **.esx → OpenIntent 2.0.2** ZIP (tested primarily with Hamina)
 
 Contributions & test reports welcome.
 
-# esx2oi — Ekahau .esx → OpenIntent 2.x
+# esx2oi — Ekahau .esx → OpenIntent 2.0.2
 
-Converts Ekahau **.esx** projects into **OpenIntent 2.x** ZIPs.
+Converts Ekahau **.esx** projects into **OpenIntent 2.0.2** ZIPs.
 
 > **Compatibility scope**  
-> The generated ZIPs aim to follow the OpenIntent 2.x schema. They are **tested primarily against Hamina Network Planner’s importer** today. Other tools may interpret certain fields differently; please try your target tool and report results (PRs/issues welcome).
+> The converter emits `openintent_version: "2.0.2"`; regression fixtures validate against the official 2.0.2 release schema. The converter has historically been **tested primarily against Hamina Network Planner’s importer**. A live import of the updated output has not yet been verified. Other tools may interpret certain fields differently; please try your target tool and report results (PRs/issues welcome).
 
 - Floors: images + dimensions (px/m/ft), geometry Y-flipped to align with images  
 - Walls & materials: used-only, names prefixed `[Imported]`, attenuation rounded to 1 decimal  
@@ -82,7 +82,7 @@ Options (excerpt):
 
 ## Interoperability notes
 - Empty `wall_segments` and `accesspoints` properties are omitted, as required by
-  the OpenIntent 2.x schema (`minItems: 1` when present).
+  the OpenIntent 2.0.2 schema (`minItems: 1` when present).
 - **Confirmed importer:** Hamina Network Planner (imports/exports OpenIntent `.zip` and documents supported fields).  
 - **Ecosystem status:** OpenIntent is evolving. If you use another tool, please test and open an issue/PR with results and sample files.
 
@@ -100,7 +100,7 @@ python3 -m unittest discover -s tests -v
 Tests generate synthetic ESX archives covering floorplan-only projects, all eight
 combinations of missing/empty wall files, standard walls and APs, mixed floors,
 `--all-materials`, and missing or malformed input data. Successful conversions
-are checked against a pinned, unmodified official OpenIntent 2.x JSON schema,
+are checked against a pinned, unmodified official OpenIntent 2.0.2 JSON schema,
 including the embedded images. No network access is needed to run the tests.
 The reporter's original ESX and a live Hamina import have not been tested.
 

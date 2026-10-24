@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-esx2oi.py — Convert Ekahau .esx → OpenIntent 2.x ZIP
+esx2oi.py — Convert Ekahau .esx → OpenIntent 2.0.2 ZIP
 
 Emits entities commonly accepted by OI 2.x importers:
 - Floorplans: name, map_uri, pixel/meter/feet dimensions (pixel 'height' = ceiling height in px),
@@ -23,7 +23,7 @@ Emits entities commonly accepted by OI 2.x importers:
 - Top-level switches: [] (schema parity)
 
 Defaults:
-- openintent_version: "2.0.0"
+- openintent_version: "2.0.2"
 - Include only the materials actually used by wall segments
 - Prefix wall material names with "[Imported] "
 - map_uri uses "file://images/..."
@@ -323,7 +323,7 @@ def write_oi_zip(out_path: str, oi_data: Dict[str, Any], images: Dict[str, bytes
     info(f"Wrote {out_path}")
 
 def main():
-    ap = argparse.ArgumentParser(description="Convert Ekahau .esx → OpenIntent 2.x ZIP")
+    ap = argparse.ArgumentParser(description="Convert Ekahau .esx → OpenIntent 2.0.2 ZIP")
     ap.add_argument("--esx", required=True, help="Absolute path to input .esx")
     ap.add_argument("--out", required=True, help="Absolute path to output .zip")
     ap.add_argument("--prefix", default="[Imported] ", help="Prefix for imported material names")
@@ -344,7 +344,7 @@ def main():
                         args.fallback_manufacturer, args.fallback_model)
 
     oi = {
-        "openintent_version": "2.0.0",
+        "openintent_version": "2.0.2",
         "floorplans": floors_out,
         "wall_materials": materials,
         "switches": [],

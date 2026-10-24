@@ -75,7 +75,7 @@ class ConversionTests(unittest.TestCase):
             data = json.loads(archive.read("openintent.json"))
             # Validate the complete payload against the unmodified upstream schema.
             Draft202012Validator(SCHEMA).validate(data)
-            self.assertEqual(data["openintent_version"], "2.0.0")
+            self.assertEqual(data["openintent_version"], "2.0.2")
             self.assertEqual(data["switches"], [])
             for floor in data["floorplans"]:
                 path = floor["map_uri"].removeprefix("file://")
