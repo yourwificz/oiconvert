@@ -312,7 +312,30 @@ def frequency_to_band_channel(frequency):
     die("Unsupported planned radio frequency")
 
 
-def build_planned_radios(source):
+def load_radio_chain_map(path):
+    if not path:
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        entries = json.load(fh)
+    if not isinstance(entries, list):
+        die("Radio chain map must be an array")
+    result = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            die("Invalid radio chain map entry")
+        key = tuple(entry.get(k) for k in ("manufacturer", "model", "band"))
+        if any(not isinstance(v, str) or not v.strip() for v in key):
+            die("Radio chain map requires manufacturer, model and band")
+        if key[2] not in ("FREQ_2.4GHZ", "FREQ_5GHZ", "FREQ_6GHZ"):
+            die("Invalid radio chain map band")
+        chains = entry.get("chains")
+        if type(chains) is not int or chains < 1 or key in result:
+            die("Invalid or duplicate radio chain map entry")
+        result[key] = chains
+    return result
+
+
+def build_planned_radios(source, identity=("", ""), chain_map=None, antenna_types=None):
     output, seen = [], set()
     for index, radio in enumerate(source):
         slot = radio.get("accessPointIndex", index)
@@ -344,11 +367,31 @@ def build_planned_radios(source):
                           channel_width=f"{width}_MHz")
             if len(frequencies) > 1:
                 info("Bonded radio: using lowest occupied subchannel as primary; verify after import")
+        chains = (chain_map or {}).get((*identity, result.get("band")))
+        if chains:
+            result["mimo_chains"] = chains
+        power = radio.get("transmitPower")
+        if power is not None:
+            if type(power) not in (int, float) or not math.isfinite(power):
+                die("Invalid planned radio transmit power")
+            if chains:
+                per_chain = power - 10 * math.log10(chains)
+                # OI 2.0.2 requires integer dBm; half-dB ties round upward.
+                result["transmit_power"] = math.floor(per_chain + 0.5)
+            antenna = (antenna_types or {}).get(radio.get("antennaTypeId"), {})
+            gain = antenna.get("maxGain")
+            # External antennas may have cable losses not represented here.
+            if antenna.get("apCoupling") == "INTERNAL_ANTENNA" and gain is not None:
+                if type(gain) not in (int, float) or not math.isfinite(gain):
+                    die("Invalid integrated antenna gain")
+                result["transmit_eirp"] = power + gain
+            if not chains:
+                info("Per-chain power omitted: no explicit RF-chain mapping for source model/band")
         output.append(result)
     return sorted(output, key=lambda r: r["id"])
 
 
-def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, floor_dims_by_name, fallback_vendor, fallback_model, force_fallback=False, esx_radios=None):
+def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, floor_dims_by_name, fallback_vendor, fallback_model, force_fallback=False, esx_radios=None, chain_map=None, antenna_types=None):
     planned = {}
     ap_ids = {ap.get("id") for ap in esx_aps or []}
     for radio in esx_radios or []:
@@ -406,7 +449,8 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
             info(f"AP {ap.get('name') or i}: using fallback {v}/{m} "
                  f"({'forced' if force_fallback else 'source vendor/model incomplete'})")
 
-        radios = build_planned_radios(source_radios)
+        # Power conversion follows the source model, even when identity fallback is forced.
+        radios = build_planned_radios(source_radios, (v_orig, m_orig), chain_map, antenna_types)
         color = ap.get("color") or "#4687f0"
         if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
             die("Invalid AP display color")
@@ -452,9 +496,16 @@ def main():
     ap.add_argument("--fallback-model", default="uap-ac-pro", help="AP model fallback")
     ap.add_argument("--force-fallback-model", action="store_true",
                     help="Replace all AP models with the fallback vendor/model (legacy behavior)")
+    ap.add_argument("--radio-chain-map", help="JSON array of source manufacturer/model/band/chains entries")
     args = ap.parse_args()
 
     z, esx_floors, wall_segs, wall_pts, wall_types, esx_aps, esx_radios, meters_per_unit, project_title = load_esx_structures(args.esx)
+    chain_map = load_radio_chain_map(args.radio_chain_map)
+    antenna_types = (
+        {a["id"]: a for a in read_json_from_zip(z, "antennaTypes.json")["antennaTypes"]
+         if a.get("status") != "DELETED"}
+        if "antennaTypes.json" in z.namelist() else {}
+    )
     proj_prefix = sanitize_filename(project_title)
 
     materials, id2pref = build_wall_materials(wall_types, wall_segs, args.prefix, args.all_materials)
@@ -464,7 +515,7 @@ def main():
     floor_dims_by_name = {f["name"]: (f["dimensions"][0]["width"], f["dimensions"][0]["length"]) for f in floors_out}
     aps_out = build_aps(esx_aps, floor_name_by_id, floor_img_h, meters_per_unit, floor_dims_by_name,
                         args.fallback_manufacturer, args.fallback_model, args.force_fallback_model,
-                        esx_radios)
+                        esx_radios, chain_map, antenna_types)
 
     oi = {
         "openintent_version": "2.0.2",

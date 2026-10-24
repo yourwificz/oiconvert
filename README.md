@@ -61,7 +61,9 @@ Options (excerpt):
   - Planned WLAN radio IDs, bands (2.4/5/6 GHz), occupied channel blocks, contiguous widths (20–320 MHz where supported) and enabled/disabled state are exported
   - Bluetooth and deleted radios are ignored. APs without planned WLAN radios omit `dot11_radios`; importer defaults may apply
   - AP hex display colors are preserved; absent colors retain the existing default
-  - Power, RF chain counts and orientation are omitted rather than filled with placeholder values
+  - Planned total conducted power is converted to integer per-chain dBm when an explicit RF-chain map is supplied; spatial streams are not used as RF-chain counts
+  - Integrated antenna gain can supply standard `transmit_eirp`; external antenna EIRP is omitted because cable losses are unknown
+  - Orientation remains unmapped
   - No invented antenna object: AP models are not antenna model identifiers
 - **Coverage areas**
   - `areas.json` and `exclusionAreas.json` become inclusion/exclusion polygons
@@ -82,11 +84,13 @@ Options (excerpt):
 ### Planned radio caveats
 - ESX occupied-subchannel lists do not explicitly identify the primary 20 MHz channel. Bonded radios use the **lowest occupied subchannel** as primary and log this choice. Verify primary channels after import; manual/automatic assignment is not asserted.
 - Non-contiguous channel lists, unsupported widths, mixed bands, duplicate radio slots and unknown AP references are rejected.
-- OI defines `transmit_power` as per-chain power. ESX power semantics and the RF-chain count must be confirmed before conversion; spatial-stream count is not assumed to be RF-chain count. Power is currently omitted, so importers may use their defaults.
+- OI defines `transmit_power` as per-chain power. [Juniper documents Ekahau power as total conducted power](https://www.mist.com/documentation/mist-ap-transmit-power-notation/). Convert with `per_chain = total - 10*log10(chains)`. OI 2.0.2 requires integer dBm: rounding introduces at most 0.5 dB error, with half-dB ties rounded upward.
+- `--radio-chain-map` supplies explicit source manufacturer/model/band RF-chain counts. Matching is exact and independent of forced identity fallback. Without a match, per-chain power and RF-chain count are omitted with a diagnostic; there is no built-in model catalog or assumption based on spatial streams. Verify the supplied count for the actual operating radio configuration.
+- `transmit_eirp = total_power + maxGain` is emitted only for a referenced integrated antenna with a known finite gain. It retains source precision. External antennas are excluded because cable losses are unknown. Importer support varies: Hamina currently documents that it ignores `transmit_eirp`; use per-chain power for it, with Disable power conversion OFF.
 - Notes and tags have no standard AP fields in the pinned schema and remain future work.
 
 ### On the radar (non-binding)
-- Source transmit power, RF chains, measured radios and exact primary-channel handling (remaining work for issue #3)
+- Automatic RF-chain discovery, measured radios and exact primary-channel handling (remaining work for issue #3)
 - AP antennas: models, patterns and per-radio antenna configuration
 - AP installation: mounting type, azimuth/rotation, tilt and per-radio height differences
 - AP metadata: notes, tags and other source properties, subject to OpenIntent representation and importer support
@@ -136,3 +140,21 @@ The reporter's original ESX is unavailable. Wall-free conversion, coverage areas
 ```
 
 AP model preservation is covered by synthetic regression fixtures. The maintainer confirmed successful Hamina model recognition with synthetic and real-project samples. Planned radio channels, widths, height and color have schema/regression coverage. A private Hamina export retained AP colors, heights and channel numbers; channel widths differed from the input as described under importer quirks. This does not change the converter's OI 2.0.2 width encoding.
+
+## RF-chain map
+
+Use `--radio-chain-map "/abs/path/radio-chains.json"` with a JSON array like:
+
+```json
+[
+  {"manufacturer": "Example", "model": "Example AP", "band": "FREQ_5GHZ", "chains": 4}
+]
+```
+
+Use the source manufacturer/model strings and one entry per band. Counts must be
+positive integers; duplicate model/band entries are rejected. Keep site-specific
+configuration and project files private. Antenna gain alone does not establish
+the RF-chain count. Power conversion has schema and synthetic regression coverage. The maintainer
+confirmed live Hamina import of the tested planned-radio powers, with differences
+below 0.05 dB from the source total conducted values, consistent with integer
+per-chain dBm quantization. This does not establish support for every model or importer.
