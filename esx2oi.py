@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-esx2oi.py — Convert Ekahau .esx → OpenIntent 2.x ZIP
+esx2oi.py — Convert Ekahau .esx → OpenIntent 2.0.2 ZIP
 
 Emits entities commonly accepted by OI 2.x importers:
 - Floorplans: name, map_uri, pixel/meter/feet dimensions (pixel 'height' = ceiling height in px),
@@ -23,7 +23,7 @@ Emits entities commonly accepted by OI 2.x importers:
 - Top-level switches: [] (schema parity)
 
 Defaults:
-- openintent_version: "2.0.0"
+- openintent_version: "2.0.2"
 - Include only the materials actually used by wall segments
 - Prefix wall material names with "[Imported] "
 - map_uri uses "file://images/..."
@@ -90,9 +90,22 @@ def read_json_from_zip(z: zipfile.ZipFile, name: str) -> Any:
 def load_esx_structures(p: str):
     z = open_esx(p)
     floors = read_json_from_zip(z, "floorPlans.json")["floorPlans"]
-    wall_segments = read_json_from_zip(z, "wallSegments.json")["wallSegments"]
-    wall_points = {p["id"]: p for p in read_json_from_zip(z, "wallPoints.json")["wallPoints"]}
-    wall_types = {w["id"]: w for w in read_json_from_zip(z, "wallTypes.json")["wallTypes"]}
+    # Ekahau may omit wall files entirely when a project has no walls.
+    # Existing files are still parsed strictly; points and types remain required
+    # when segments exist, rather than silently dropping walls from broken ESXs.
+    members = set(z.namelist())
+    wall_segments = (
+        read_json_from_zip(z, "wallSegments.json")["wallSegments"]
+        if "wallSegments.json" in members else []
+    )
+    wall_points = (
+        {p["id"]: p for p in read_json_from_zip(z, "wallPoints.json")["wallPoints"]}
+        if wall_segments or "wallPoints.json" in members else {}
+    )
+    wall_types = (
+        {w["id"]: w for w in read_json_from_zip(z, "wallTypes.json")["wallTypes"]}
+        if wall_segments or "wallTypes.json" in members else {}
+    )
     aps = read_json_from_zip(z, "accessPoints.json")["accessPoints"] if "accessPoints.json" in z.namelist() else []
     radios = read_json_from_zip(z, "simulatedRadios.json")["simulatedRadios"] if "simulatedRadios.json" in z.namelist() else []
     meters_per_unit = {f["id"]: float(f.get("metersPerUnit") or 0.0) for f in floors}
@@ -226,6 +239,10 @@ def build_floor_objects(z, esx_floors, wall_segments, wall_points, id2pref, proj
             "reference_markers": [],
             "floor_id": f.get("id"),
         })
+        # OI 2.x allows this property to be absent, but requires at least one
+        # segment if it is present (minItems: 1).
+        if not floors_out[-1]["wall_segments"]:
+            del floors_out[-1]["wall_segments"]
         images[image_rel] = png_bytes
         floor_img_h[f.get("id")] = h
     return floors_out, images, floor_img_h
@@ -292,6 +309,12 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
             "manufacturer_original": v_orig,
             "model_original": m_orig,
         }
+        # Unplaced/measured APs need not have a location. OI 2.0.2 allows
+        # coordinates to be absent, but forbids an empty coordinates array.
+        if not coords:
+            del ap_out["coordinates"]
+        if fid not in floor_name_by_id:
+            del ap_out["floorplan_name"]
         aps_out.append(ap_out)
     return aps_out
 
@@ -306,7 +329,7 @@ def write_oi_zip(out_path: str, oi_data: Dict[str, Any], images: Dict[str, bytes
     info(f"Wrote {out_path}")
 
 def main():
-    ap = argparse.ArgumentParser(description="Convert Ekahau .esx → OpenIntent 2.x ZIP")
+    ap = argparse.ArgumentParser(description="Convert Ekahau .esx → OpenIntent 2.0.2 ZIP")
     ap.add_argument("--esx", required=True, help="Absolute path to input .esx")
     ap.add_argument("--out", required=True, help="Absolute path to output .zip")
     ap.add_argument("--prefix", default="[Imported] ", help="Prefix for imported material names")
@@ -327,12 +350,14 @@ def main():
                         args.fallback_manufacturer, args.fallback_model)
 
     oi = {
-        "openintent_version": "2.0.0",
+        "openintent_version": "2.0.2",
         "floorplans": floors_out,
         "wall_materials": materials,
-        "accesspoints": aps_out,
         "switches": [],
     }
+    # Like wall_segments, accesspoints is optional but cannot be an empty array.
+    if aps_out:
+        oi["accesspoints"] = aps_out
     write_oi_zip(args.out, oi, images)
 
 if __name__ == "__main__":
