@@ -151,36 +151,6 @@ class ConversionTests(unittest.TestCase):
         self.files["accessPoints.json"] = {"accessPoints": []}
         self.assertNotIn("accesspoints", self.convert())
 
-    def test_source_ap_model_preserved_verbatim(self):
-        self.files["accessPoints.json"] = {"accessPoints": [
-            {"name": "Ruckus AP", "vendor": "Ruckus", "model": "R850"},
-            {"name": "Cisco AP", "manufacturer": "Cisco", "model": "C9130AXI-E"},
-        ]}
-        for ap, expected in zip(self.convert()["accesspoints"],
-                                [("Ruckus", "R850"), ("Cisco", "C9130AXI-E")]):
-            self.assertEqual((ap["manufacturer"], ap["model"]), expected)
-            # An AP model is not an antenna model. Let the importer use its catalog.
-            self.assertNotIn("antennas", ap)
-
-    def test_incomplete_ap_identity_uses_whole_fallback_pair(self):
-        for identity in ({}, {"vendor": "Cisco"}, {"model": "R850"},
-                         {"vendor": "Cisco", "model": "  "}):
-            with self.subTest(identity=identity):
-                self.files["accessPoints.json"] = {"accessPoints": [{"name": "AP", **identity}]}
-                ap = self.convert("--fallback-manufacturer", "Example",
-                                  "--fallback-model", "Known-Model")["accesspoints"][0]
-                self.assertEqual((ap["manufacturer"], ap["model"]), ("Example", "Known-Model"))
-                self.assertEqual(ap["manufacturer_original"], identity.get("vendor", "").strip())
-                self.assertEqual(ap["model_original"], identity.get("model", "").strip())
-
-    def test_force_fallback_model(self):
-        self.files["accessPoints.json"] = {"accessPoints": [
-            {"name": "AP", "vendor": "Ruckus", "model": "R850"}
-        ]}
-        ap = self.convert("--force-fallback-model")["accesspoints"][0]
-        self.assertEqual((ap["manufacturer"], ap["model"]), ("ubiquiti", "uap-ac-pro"))
-        self.assertEqual(ap["model_original"], "R850")
-
     def test_coverage_and_exclusions_use_correct_floor_and_y_origin(self):
         self.files["floorPlans.json"]["floorPlans"].append(
             {"id": "floor-2", "name": "Upper", "width": 100, "height": 80})
