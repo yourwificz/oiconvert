@@ -233,6 +233,65 @@ class ConversionTests(unittest.TestCase):
         self.files["accessPoints.json"]["accessPoints"][0]["color"] = "red"
         self.assertIn("display color", self.convert(success=False).stderr)
 
+    def chain_map_file(self, entries):
+        path = Path(self.temp.name) / "radio-chains.json"
+        path.write_text(json.dumps(entries))
+        return str(path)
+
+    def test_total_to_per_chain_power_uses_explicit_chain_map(self):
+        radios = self.add_planned_ap()
+        radios[0]["transmitPower"] = 20
+        radios[0]["spatialStreamCount"] = 1  # Does not override explicit RF chains.
+        path = self.chain_map_file([{"manufacturer": "Example", "model": "Model",
+                                     "band": "FREQ_2.4GHZ", "chains": 4}])
+        for options in ([], ["--force-fallback-model"]):
+            with self.subTest(options=options):
+                output = self.convert("--radio-chain-map", path, *options)["accesspoints"][0]["dot11_radios"]
+                self.assertEqual(output[0]["transmit_power"], 14)
+                self.assertEqual(output[0]["mimo_chains"], 4)
+                self.assertNotIn("transmit_power", output[1])
+
+    def test_integrated_antenna_eirp_and_external_antenna_loss_uncertainty(self):
+        radios = self.add_planned_ap()
+        for r in radios:
+            r["antennaTypeId"] = "antenna"
+        self.files["antennaTypes.json"] = {"antennaTypes": [
+            {"id": "antenna", "maxGain": 4.5, "apCoupling": "INTERNAL_ANTENNA"}]}
+        output = self.convert()["accesspoints"][0]["dot11_radios"]
+        self.assertTrue(all(r["transmit_eirp"] == 22.0 for r in output))
+        self.assertTrue(all("transmit_power" not in r and "mimo_chains" not in r for r in output))
+        self.files["antennaTypes.json"]["antennaTypes"][0]["apCoupling"] = "EXTERNAL_ANTENNA"
+        self.assertTrue(all("transmit_eirp" not in r for r in
+                            self.convert()["accesspoints"][0]["dot11_radios"]))
+
+    def test_power_quantization_and_zero_power(self):
+        path = self.chain_map_file([{"manufacturer": "Example", "model": "Model",
+                                     "band": "FREQ_2.4GHZ", "chains": 1}])
+        for total, expected in [(0, 0), (-2.5, -2), (12.5, 13), (-3, -3)]:
+            with self.subTest(total=total):
+                self.add_planned_ap()[0]["transmitPower"] = total
+                result = self.convert("--radio-chain-map", path)["accesspoints"][0]["dot11_radios"][0]
+                self.assertEqual(result["transmit_power"], expected)
+
+    def test_invalid_power_and_gain_are_rejected(self):
+        for power in (True, "14", float("nan"), float("inf")):
+            with self.subTest(power=power):
+                self.add_planned_ap()[0]["transmitPower"] = power
+                self.convert(success=False)
+        self.add_planned_ap()[0]["antennaTypeId"] = "antenna"
+        self.files["antennaTypes.json"] = {"antennaTypes": [
+            {"id": "antenna", "maxGain": "4", "apCoupling": "INTERNAL_ANTENNA"}]}
+        self.convert(success=False)
+
+    def test_invalid_chain_map_is_rejected(self):
+        entry = {"manufacturer": "Example", "model": "Model", "band": "FREQ_5GHZ", "chains": 2}
+        for entries in ({}, [None], [entry, entry],
+                        [{**entry, "chains": True}], [{**entry, "chains": 0}],
+                        [{**entry, "chains": 2.5}], [{**entry, "band": "5GHz"}],
+                        [{**entry, "model": ""}]):
+            with self.subTest(entries=entries):
+                self.convert("--radio-chain-map", self.chain_map_file(entries), success=False)
+
     def test_radio_channel_edges_and_wide_spectrum(self):
         cases = [([2484], "FREQ_2.4GHZ", 14, "20_MHz"),
                  ([5935], "FREQ_6GHZ", 2, "20_MHz"),
