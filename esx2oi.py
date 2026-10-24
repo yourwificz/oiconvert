@@ -309,6 +309,12 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
             "manufacturer_original": v_orig,
             "model_original": m_orig,
         }
+        # Unplaced/measured APs need not have a location. OI 2.0.2 allows
+        # coordinates to be absent, but forbids an empty coordinates array.
+        if not coords:
+            del ap_out["coordinates"]
+        if fid not in floor_name_by_id:
+            del ap_out["floorplan_name"]
         aps_out.append(ap_out)
     return aps_out
 

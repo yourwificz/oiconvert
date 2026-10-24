@@ -151,6 +151,25 @@ class ConversionTests(unittest.TestCase):
         self.files["accessPoints.json"] = {"accessPoints": []}
         self.assertNotIn("accesspoints", self.convert())
 
+    def test_unplaced_aps_have_no_invented_floor_or_empty_coordinates(self):
+        for location in (None, {}, {"floorPlanId": "unknown"}):
+            with self.subTest(location=location):
+                self.files["accessPoints.json"] = {"accessPoints": [
+                    {"name": "Unplaced AP", "location": location}
+                ]}
+                ap = self.convert()["accesspoints"][0]
+                self.assertEqual(ap["name"], "Unplaced AP")
+                self.assertNotIn("coordinates", ap)
+                self.assertNotIn("floorplan_name", ap)
+
+    def test_ap_with_known_floor_but_no_coordinates(self):
+        self.files["accessPoints.json"] = {"accessPoints": [
+            {"name": "AP-1", "location": {"floorPlanId": "floor-1"}}
+        ]}
+        ap = self.convert()["accesspoints"][0]
+        self.assertEqual(ap["floorplan_name"], "Ground")
+        self.assertNotIn("coordinates", ap)
+
     def test_mixed_floors(self):
         self.add_walls()
         self.files["floorPlans.json"]["floorPlans"].append(

@@ -51,6 +51,7 @@ Options (excerpt):
   - Export only materials actually used on walls (or all via `--all-materials`)
   - Names prefixed with `[Imported] ...`; attenuation rounded to **1 decimal**
 - **Access Points**
+  - Unplaced APs are retained without empty coordinates or an invented floor reference.
   - AP pins visible in tested importer(s) (forces a known model by default; original vendor/model preserved)
   - Coordinates as `coordinate_xyz` in **this order**: **pixels → meters → feet**
   - Pixel `z` equals floor pixel “ceiling height”; meters/feet `z` = 2.5 m / 8.202 ft
