@@ -1,7 +1,7 @@
 # oiconvert
 
 ## About oiconvert
-A tiny toolkit for OpenIntent conversions.
+A toolkit for conversions targeting the OpenIntent 2.0.2 standard.
 
 - `esx2oi.py` — Ekahau **.esx → OpenIntent 2.0.2** ZIP (tested primarily with Hamina)
 
@@ -12,7 +12,7 @@ Contributions & test reports welcome.
 Converts Ekahau **.esx** projects into **OpenIntent 2.0.2** ZIPs.
 
 > **Compatibility scope**  
-> The converter emits `openintent_version: "2.0.2"`; regression fixtures validate against the official 2.0.2 release schema. The OpenIntent 2.0.2 output was successfully imported into **Hamina Network Planner** with and without walls. The maintainer also confirmed successful import of coverage areas and exclusions. Other tools may interpret certain fields differently; please try your target tool and report results (PRs/issues welcome).
+> The converter targets the official OpenIntent 2.0.2 schema and emits `openintent_version: "2.0.2"`. Schema conformance is the reference for conversion behavior; importer-specific limitations are documented separately. Regression fixtures validate against that release schema. The OpenIntent 2.0.2 output was successfully imported into **Hamina Network Planner** with and without walls. The maintainer also confirmed successful import of coverage areas and exclusions. Other tools may interpret certain fields differently; please try your target tool and report results (PRs/issues welcome).
 
 - Floors: images + dimensions (px/m/ft), geometry Y-flipped to align with images  
 - Walls & materials: used-only, names prefixed `[Imported]`, attenuation rounded to 1 decimal  
@@ -82,7 +82,7 @@ Options (excerpt):
 ### Planned radio caveats
 - ESX occupied-subchannel lists do not explicitly identify the primary 20 MHz channel. Bonded radios use the **lowest occupied subchannel** as primary and log this choice. Verify primary channels after import; manual/automatic assignment is not asserted.
 - Non-contiguous channel lists, unsupported widths, mixed bands, duplicate radio slots and unknown AP references are rejected.
-- OI defines `transmit_power` as per-chain power. ESX power semantics and the RF-chain count must be confirmed before conversion; spatial-stream count is not assumed to be RF-chain count. Power is currently omitted, so Hamina may use its defaults.
+- OI defines `transmit_power` as per-chain power. ESX power semantics and the RF-chain count must be confirmed before conversion; spatial-stream count is not assumed to be RF-chain count. Power is currently omitted, so importers may use their defaults.
 - Notes and tags have no standard AP fields in the pinned schema and remain future work.
 
 ### On the radar (non-binding)
@@ -96,7 +96,7 @@ Options (excerpt):
 - Survey results (measured heatmaps / AP placements)
 
 ### Known importer quirks (observed)
-- In a Hamina import test, channel widths differed from the OI input even with simulated AP auto-channel assignment disabled. A subsequent Hamina export used the same standard `channel_width` strings. Project-level width settings are a suspected override; inspect both project and AP settings after import. Exact width round-trip preservation is not yet confirmed.
+- In a Hamina import test, channel widths differed from the OI input even with simulated AP auto-channel assignment disabled. A subsequent Hamina export used the same standard `channel_width` strings. The maintainer reports that Hamina controls widths through project-level settings and offers no per-AP width option. Exact width round-trip preservation is not supported in this tested workflow. The converter retains standard OI 2.0.2 per-radio widths; this is tracked as a Hamina interoperability limitation, with the internal cause unconfirmed.
 - AP pins/BOM may not appear if the AP model is **unknown** to a tool’s catalog
 - Coordinate order can matter: **pixels → meters → feet**
 - Pixel dimension `height` is **ceiling height in pixels**, not the image’s pixel height
@@ -135,4 +135,4 @@ The reporter's original ESX is unavailable. Wall-free conversion, coverage areas
 /usr/bin/python3 /abs/path/esx2oi.py   --esx "/abs/path/in.esx"   --out "/abs/path/out.zip"   --prefix "[Imported] "   --fallback-manufacturer "ubiquiti"   --fallback-model "uap-ac-pro"
 ```
 
-AP model preservation is covered by synthetic regression fixtures. The maintainer confirmed successful Hamina model recognition with synthetic and real-project samples. Planned radio channels, widths, height and color have schema/regression coverage. A private Hamina export retained AP colors, heights and channel numbers; channel widths differed from the input and require further verification.
+AP model preservation is covered by synthetic regression fixtures. The maintainer confirmed successful Hamina model recognition with synthetic and real-project samples. Planned radio channels, widths, height and color have schema/regression coverage. A private Hamina export retained AP colors, heights and channel numbers; channel widths differed from the input as described under importer quirks. This does not change the converter's OI 2.0.2 width encoding.
