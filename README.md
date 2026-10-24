@@ -12,7 +12,7 @@ Contributions & test reports welcome.
 Converts Ekahau **.esx** projects into **OpenIntent 2.0.2** ZIPs.
 
 > **Compatibility scope**  
-> The converter emits `openintent_version: "2.0.2"`; regression fixtures validate against the official 2.0.2 release schema. The OpenIntent 2.0.2 output was successfully imported into **Hamina Network Planner** with and without walls. Coverage-area import still needs a separate live check. Other tools may interpret certain fields differently; please try your target tool and report results (PRs/issues welcome).
+> The converter emits `openintent_version: "2.0.2"`; regression fixtures validate against the official 2.0.2 release schema. The OpenIntent 2.0.2 output was successfully imported into **Hamina Network Planner** with and without walls. The maintainer also confirmed successful import of coverage areas and exclusions. Other tools may interpret certain fields differently; please try your target tool and report results (PRs/issues welcome).
 
 - Floors: images + dimensions (px/m/ft), geometry Y-flipped to align with images  
 - Walls & materials: used-only, names prefixed `[Imported]`, attenuation rounded to 1 decimal  
@@ -109,7 +109,7 @@ combinations of missing/empty wall files, standard walls and APs, mixed floors,
 `--all-materials`, coverage geometry and exclusions, and missing or malformed input data. Successful conversions
 are checked against a pinned, unmodified official OpenIntent 2.0.2 JSON schema,
 including the embedded images. No network access is needed to run the tests.
-The reporter's original ESX is unavailable. Wall-free conversion was successfully imported into Hamina; coverage-area import remains unverified.
+The reporter's original ESX is unavailable. Wall-free conversion, coverage areas and exclusions were successfully imported into Hamina, as confirmed by the maintainer.
 
 ---
 
