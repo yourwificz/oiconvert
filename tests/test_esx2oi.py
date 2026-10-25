@@ -147,6 +147,65 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(data["accesspoints"][0]["name"], "AP-1")
         self.assertNotIn("wall_segments", data["floorplans"][0])
 
+    def test_ap_notes_and_tags_are_preserved_as_source_metadata(self):
+        self.add_planned_ap()
+        ap = self.files["accessPoints.json"]["accessPoints"][0]
+        ap.update(tags=["Installation", {"label": "Review", "color": "#123456"}],
+                  noteIds=["note-b", "note-a"])
+        self.files["notes.json"] = {"notes": [
+            {"id": "note-a", "text": "Line one\nPříliš žluťoučký 🛠", "imageIds": ["image-a"]},
+            {"id": "note-b", "text": "<b>Keep formatting</b>", "status": "CREATED"},
+            {"id": "unrelated", "text": "Unrelated floor note"}]}
+        result = self.convert()["accesspoints"]
+        self.assertEqual(result[0]["oiconvert_source"], {
+            "version": 1, "tags": ap["tags"], "note_ids": ["note-b", "note-a"],
+            "notes": [{"id": "note-b", "text": "<b>Keep formatting</b>"},
+                      {"id": "note-a", "text": "Line one\nPříliš žluťoučký 🛠", "imageIds": ["image-a"]}]})
+        self.assertNotIn("notes", result[0])
+        self.assertNotIn("tags", result[0])
+        self.assertNotIn("oiconvert_source", result[1])
+
+    def test_missing_and_deleted_ap_notes_keep_only_references(self):
+        self.add_planned_ap()
+        self.files["accessPoints.json"]["accessPoints"][0]["noteIds"] = ["missing", "deleted"]
+        for present in (False, True):
+            with self.subTest(notes_file_present=present):
+                if present:
+                    self.files["notes.json"] = {"notes": [
+                        {"id": "deleted", "text": "Do not resurrect", "status": "DELETED"}]}
+                metadata = self.convert()["accesspoints"][0]["oiconvert_source"]
+                self.assertEqual(metadata, {"version": 1, "note_ids": ["missing", "deleted"]})
+
+    def test_empty_ap_metadata_has_no_extension(self):
+        self.add_planned_ap()
+        self.files["accessPoints.json"]["accessPoints"][0].update(tags=[], noteIds=[])
+        self.assertNotIn("oiconvert_source", self.convert()["accesspoints"][0])
+
+    def test_unplaced_ap_metadata_is_preserved(self):
+        self.add_planned_ap()
+        self.files["accessPoints.json"]["accessPoints"][1]["tags"] = ["Unplaced"]
+        ap = self.convert()["accesspoints"][1]
+        self.assertEqual(ap["oiconvert_source"]["tags"], ["Unplaced"])
+        self.assertNotIn("coordinates", ap)
+
+    def test_invalid_ap_metadata_is_rejected(self):
+        for field, value in (("tags", "tag"), ("tags", [float("nan")]),
+                             ("noteIds", "note"), ("noteIds", [False])):
+            with self.subTest(field=field, value=value):
+                self.add_planned_ap()
+                self.files["accessPoints.json"]["accessPoints"][0][field] = value
+                self.convert(success=False)
+
+    def test_invalid_and_duplicate_referenced_notes_are_rejected(self):
+        self.add_planned_ap()
+        self.files["accessPoints.json"]["accessPoints"][0]["noteIds"] = ["note"]
+        for records in ([{"id": "note", "text": None}],
+                        [{"id": "note", "text": "Text", "imageIds": "image"}],
+                        [{"id": "note", "text": "A"}, {"id": "note", "text": "B"}]):
+            with self.subTest(records=records):
+                self.files["notes.json"] = {"notes": records}
+                self.convert(success=False)
+
     def test_explicit_empty_aps(self):
         self.files["accessPoints.json"] = {"accessPoints": []}
         self.assertNotIn("accesspoints", self.convert())

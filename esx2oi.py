@@ -391,7 +391,63 @@ def build_planned_radios(source, identity=("", ""), chain_map=None, antenna_type
     return sorted(output, key=lambda r: r["id"])
 
 
-def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, floor_dims_by_name, fallback_vendor, fallback_model, force_fallback=False, esx_radios=None, chain_map=None, antenna_types=None):
+def load_ap_notes(z):
+    if "notes.json" not in z.namelist():
+        return {}
+    records = read_json_from_zip(z, "notes.json").get("notes")
+    if not isinstance(records, list):
+        die("Invalid source notes list")
+    result = {}
+    for note in records:
+        if not isinstance(note, dict):
+            die("Invalid source note record")
+        if note.get("status") == "DELETED":
+            continue
+        note_id = note.get("id")
+        if not isinstance(note_id, str) or not note_id or note_id in result:
+            die("Invalid or duplicate source note ID")
+        result[note_id] = note
+    return result
+
+
+def build_ap_metadata(ap, notes):
+    """Preserve metadata with no standard OI 2.0.2 AP representation."""
+    metadata = {}
+    tags = ap.get("tags", [])
+    note_ids = ap.get("noteIds", [])
+    if not isinstance(tags, list):
+        die("Invalid AP tags list")
+    if not isinstance(note_ids, list) or any(not isinstance(n, str) or not n for n in note_ids):
+        die("Invalid AP note references")
+    if tags:
+        metadata["tags"] = tags
+    if note_ids:
+        metadata["note_ids"] = note_ids
+        resolved = []
+        for note_id in note_ids:
+            note = notes.get(note_id)
+            if note is None:
+                info("AP note is missing or deleted: retaining reference only")
+                continue
+            if not isinstance(note.get("text"), str):
+                die("Invalid AP note text")
+            images = note.get("imageIds", [])
+            if not isinstance(images, list) or any(not isinstance(i, str) or not i for i in images):
+                die("Invalid AP note image references")
+            record = {"id": note_id, "text": note["text"]}
+            if images:
+                record["imageIds"] = images
+            resolved.append(record)
+        if resolved:
+            metadata["notes"] = resolved
+    try:
+        json.dumps(metadata, allow_nan=False)
+    except (ValueError, TypeError):
+        die("Invalid non-JSON AP metadata")
+    return {"version": 1, **metadata} if metadata else {}
+
+
+def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, floor_dims_by_name, fallback_vendor, fallback_model, force_fallback=False, esx_radios=None, chain_map=None, antenna_types=None, notes=None):
     planned = {}
     ap_ids = {ap.get("id") for ap in esx_aps or []}
     for radio in esx_radios or []:
@@ -465,6 +521,9 @@ def build_aps(esx_aps, floor_name_by_id, floor_img_h_by_id, meters_per_unit, flo
             "manufacturer_original": v_orig,
             "model_original": m_orig,
         }
+        metadata = build_ap_metadata(ap, notes or {})
+        if metadata:
+            ap_out["oiconvert_source"] = metadata
         if not radios:
             del ap_out["dot11_radios"]
         # Unplaced/measured APs need not have a location. OI 2.0.2 allows
@@ -506,6 +565,7 @@ def main():
          if a.get("status") != "DELETED"}
         if "antennaTypes.json" in z.namelist() else {}
     )
+    notes = load_ap_notes(z)
     proj_prefix = sanitize_filename(project_title)
 
     materials, id2pref = build_wall_materials(wall_types, wall_segs, args.prefix, args.all_materials)
@@ -515,7 +575,7 @@ def main():
     floor_dims_by_name = {f["name"]: (f["dimensions"][0]["width"], f["dimensions"][0]["length"]) for f in floors_out}
     aps_out = build_aps(esx_aps, floor_name_by_id, floor_img_h, meters_per_unit, floor_dims_by_name,
                         args.fallback_manufacturer, args.fallback_model, args.force_fallback_model,
-                        esx_radios, chain_map, antenna_types)
+                        esx_radios, chain_map, antenna_types, notes)
 
     oi = {
         "openintent_version": "2.0.2",

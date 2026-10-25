@@ -87,13 +87,13 @@ Options (excerpt):
 - OI defines `transmit_power` as per-chain power. [Juniper documents Ekahau power as total conducted power](https://www.mist.com/documentation/mist-ap-transmit-power-notation/). Convert with `per_chain = total - 10*log10(chains)`. OI 2.0.2 requires integer dBm: rounding introduces at most 0.5 dB error, with half-dB ties rounded upward.
 - `--radio-chain-map` supplies explicit source manufacturer/model/band RF-chain counts. Matching is exact and independent of forced identity fallback. Without a match, per-chain power and RF-chain count are omitted with a diagnostic; there is no built-in model catalog or assumption based on spatial streams. Verify the supplied count for the actual operating radio configuration.
 - `transmit_eirp = total_power + maxGain` is emitted only for a referenced integrated antenna with a known finite gain. It retains source precision. External antennas are excluded because cable losses are unknown. Importer support varies: Hamina currently documents that it ignores `transmit_eirp`; use per-chain power for it, with Disable power conversion OFF.
-- Notes and tags have no standard AP fields in the pinned schema and remain future work.
+- AP notes and tags have no standard fields in the pinned schema; they are preserved in the nonstandard source metadata extension described below.
 
 ### On the radar (non-binding)
 - Automatic RF-chain discovery, measured radios and exact primary-channel handling (remaining work for issue #3)
 - AP antennas: models, patterns and per-radio antenna configuration
 - AP installation: mounting type, azimuth/rotation, tilt and per-radio height differences
-- AP metadata: notes, tags and other source properties, subject to OpenIntent representation and importer support
+- Other AP metadata, subject to source evidence and OpenIntent representation
 - Attenuation areas (types + polygons)
 - Reference/scale markers
 - Notes & picture notes (image annotations)
@@ -158,3 +158,27 @@ the RF-chain count. Power conversion has schema and synthetic regression coverag
 confirmed live Hamina import of the tested planned-radio powers, with differences
 below 0.05 dB from the source total conducted values, consistent with integer
 per-chain dBm quantization. This does not establish support for every model or importer.
+
+## AP notes and tags
+
+OI 2.0.2 has no standard AP notes or tag-list fields. The converter preserves
+these under AP `oiconvert_source` (extension `version: 1`):
+
+- `tags`: the original nonempty ESX tag array, retaining order and JSON structure.
+- `note_ids`: the original nonempty AP `noteIds` references, in source order.
+- `notes`: referenced, active records from optional `notes.json`, containing
+  source `id`, unchanged `text`, and nonempty `imageIds` when present.
+
+Empty metadata adds no extension. Missing or deleted notes retain their
+references with a diagnostic, without restoring deleted text. Unrelated floor
+and picture notes are not attached to APs. Text formatting, Unicode and line
+breaks are preserved; note images are referenced only, not packaged or rendered.
+History/audit records are not exported.
+
+This is **data preservation, not standard OpenIntent notes/tag support**.
+Generic consumers, including Hamina, may ignore or discard the extension;
+schema validation does not establish UI display or round-trip support. Tags
+are not mapped to `asset_tag`, which represents a different property.
+The available private source sample has AP-linked notes but no nonempty tags;
+tag preservation is covered with synthetic fixtures only. Keep project notes,
+tags, attachments and generated outputs private.
