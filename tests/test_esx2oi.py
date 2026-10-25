@@ -296,6 +296,45 @@ class ConversionTests(unittest.TestCase):
         self.assertNotIn("antennas", ap)
         self.assertEqual(len(ap["oiconvert_source"]["antenna_configurations"]), 3)
 
+    def external_multiband_fixture(self):
+        types = self.add_antenna_fixture()
+        for antenna, frequency, gain in zip(types, ("2.4", "5", "6"), (2, 4, 5)):
+            antenna.update(apCoupling="EXTERNAL_ANTENNA", apVendor="Example",
+                           name=f"Example ANT-123 {frequency}GHz {gain}dBi",
+                           directional=False, maxGain=gain)
+        return types
+
+    def test_external_model_annotations_and_multiband_definition(self):
+        types = self.external_multiband_fixture()
+        ap = self.convert()["accesspoints"][0]
+        self.assertEqual(ap["antennas"], [{
+            "vendor": "Example", "model": "ANT-123", "antenna_type": "OMNIDIRECTIONAL",
+            "bands": [{"band": band, "gain": gain} for band, gain in
+                      zip(("FREQ_2.4GHZ", "FREQ_5GHZ", "FREQ_6GHZ"), (2, 4, 5))],
+            "oiconvert_source": {"radio_ids": [0, 1, 2]}}])
+        for record, original in zip(ap["oiconvert_source"]["antenna_configurations"], types):
+            self.assertEqual(record["antenna_type"]["name"], original["name"])
+
+    def test_external_annotation_requires_matching_band_and_gain(self):
+        types = self.external_multiband_fixture()
+        types[0]["name"] = "Example ANT-123 5GHz 2dBi"
+        types[1]["name"] = "Example ANT-123 5GHz 99dBi"
+        types[2]["name"] = "Example ANT-123 special edition"
+        antennas = self.convert()["accesspoints"][0]["antennas"]
+        self.assertEqual([a["model"] for a in antennas], [a["name"] for a in types])
+
+    def test_external_distinct_placement_or_directionality_is_not_combined(self):
+        self.external_multiband_fixture()[1]["directional"] = True
+        self.files["simulatedRadios.json"]["simulatedRadios"][2]["antennaTilt"] = -44
+        self.assertEqual(len(self.convert()["accesspoints"][0]["antennas"]), 3)
+
+    def test_external_repeated_band_does_not_imply_one_physical_antenna(self):
+        types = self.external_multiband_fixture()
+        types[2].update(frequencyBand="TWO", name=types[0]["name"], maxGain=2)
+        self.files["simulatedRadios.json"]["simulatedRadios"][2][
+            "channelByCenterFrequencyDefinedNarrowChannels"] = [2412]
+        self.assertEqual(len(self.convert()["accesspoints"][0]["antennas"]), 3)
+
     def test_tilt_sign_is_preserved_without_implicit_mount_conversion(self):
         for mount in ("WALL", "CEILING", "FLOOR"):
             for tilt in (-44.0, 0.0, 44.0):

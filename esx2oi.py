@@ -391,9 +391,28 @@ def build_planned_radios(source, identity=("", ""), chain_map=None, antenna_type
     return sorted(output, key=lambda r: r["id"])
 
 
+def external_antenna_model(antenna):
+    """Remove a recognized source band/gain annotation, never catalog aliases."""
+    name = antenna["name"].strip()
+    frequency = {"TWO": "2.4", "FIVE": "5", "SIX": "6"}.get(antenna.get("frequencyBand"))
+    if not frequency:
+        return name, False
+    match = re.fullmatch(r"(.+?)\s+" + re.escape(frequency) +
+                         r"\s*GHz(?:\s+([+-]?\d+(?:\.\d+)?)\s*dBi)?", name, re.IGNORECASE)
+    if not match:
+        return name, False
+    if match[2] is not None and float(match[2]) != antenna.get("maxGain"):
+        return name, False
+    model = match[1].strip()
+    vendor = antenna["apVendor"].strip()
+    if model.casefold().startswith(vendor.casefold() + " "):
+        model = model[len(vendor):].strip()
+    return (model, True) if model else (name, False)
+
+
 def build_antennas(source, antenna_types):
     """Map source antenna identities independently of the parent AP identity."""
-    output, configurations = [], []
+    output, configurations, groups = [], [], {}
     bands = {"TWO": "FREQ_2.4GHZ", "FIVE": "FREQ_5GHZ", "SIX": "FREQ_6GHZ"}
     for index, radio in enumerate(source):
         parameters = {k: radio[k] for k in ("antennaTypeId", "antennaMounting",
@@ -438,11 +457,31 @@ def build_antennas(source, antenna_types):
         # standard; this namespaced extension retains the source slot explicitly.
         mapped["oiconvert_source"] = {"radio_id": slot}
         output.append((slot, mapped))
+        if antenna.get("apCoupling") == "EXTERNAL_ANTENNA":
+            model, normalized = external_antenna_model(antenna)
+            mapped["model"] = model
+            if normalized:
+                # Only combine different bands with identical identity and placement.
+                placement = {k: v for k, v in parameters.items() if k != "antennaTypeId"}
+                key = (vendor, model, mapped.get("antenna_type"),
+                       json.dumps(placement, sort_keys=True))
+                groups.setdefault(key, []).append((slot, mapped))
     try:
         json.dumps(configurations, allow_nan=False)
     except (ValueError, TypeError):
         die("Invalid non-JSON antenna source metadata")
-    return ([a for _, a in sorted(output, key=lambda pair: pair[0])],
+    removed = set()
+    for entries in groups.values():
+        entries.sort(key=lambda pair: pair[0])
+        group_bands = [a["bands"][0]["band"] for _, a in entries]
+        # Multiple same-band records could represent separate physical antennas.
+        if len(entries) < 2 or len(set(group_bands)) != len(group_bands):
+            continue
+        first = entries[0][1]
+        first["bands"] = [a["bands"][0] for _, a in entries]
+        first["oiconvert_source"] = {"radio_ids": [slot for slot, _ in entries]}
+        removed.update(id(a) for _, a in entries[1:])
+    return ([a for _, a in sorted(output, key=lambda pair: pair[0]) if id(a) not in removed],
             sorted(configurations, key=lambda r: r["radio_id"]))
 
 

@@ -164,8 +164,14 @@ per-chain dBm quantization. This does not establish support for every model or i
 
 For referenced integrated and external antennas, `antennas` contains source antenna definitions
 with `vendor` from `apVendor`, `model` from the antenna `name` (not the AP model),
-band and optional `maxGain`/directional type. Records are band-specific definitions;
-physical antenna/lead counts and importer catalog aliases are not inferred.
+band and optional `maxGain`/directional type. For external antennas, a trailing
+matching `2.4GHz`, `5GHz` or `6GHz` annotation (optionally followed by a matching
+gain in dBi) and a leading antenna vendor are removed from the model name.
+Different bands with the same resulting identity, directionality and source
+placement are combined into one multiband definition. Repeated same-band records
+remain separate because physical antenna/lead counts are not inferred.
+Unrecognized or inconsistent labels remain unchanged. Importer catalog aliases
+and AP model identities are not rewritten by this normalization.
 Referenced bands must agree with the radio spectrum. Source identities need not
 match a destination catalog. Live importer recognition remains unverified.
 
@@ -183,7 +189,8 @@ explicit radio-to-antenna link. The schema permits additional properties. We use
 - AP `oiconvert_source.antenna_configurations`: records keyed by `radio_id`,
   with original mounting/direction/tilt/height/reference in `parameters`, and
   available source definition fields in `antenna_type` (including patterns).
-- Antenna `oiconvert_source.radio_id`: source radio slot.
+- Antenna `oiconvert_source.radio_id`: source radio slot; combined multiband
+  definitions use `radio_ids` for all contributing slots.
 
 These are converter extensions, **not standard OI fields**. Generic importers
 may ignore or discard them; schema validation does not imply importer support.
