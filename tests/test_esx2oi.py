@@ -380,10 +380,78 @@ class ConversionTests(unittest.TestCase):
     def test_empty_coverage_and_attenuation_areas_are_not_coverage(self):
         self.files["areas.json"] = {"areas": []}
         self.files["exclusionAreas.json"] = {"exclusionAreas": []}
-        self.files["attenuationAreas.json"] = {"attenuationAreas": [
-            {"floorPlanId": "floor-1", "area": [{"x": 1, "y": 2}] * 3}
-        ]}
+        self.add_attenuation_fixture()
         self.assertEqual(self.convert()["floorplans"][0]["coverage_areas"], [])
+
+    def add_attenuation_fixture(self):
+        definition = {"id": "type-a", "name": "Test volume", "color": "#123456",
+                      "lowerEdge": 1.2, "upperEdge": 4.5, "propagationProperties": [
+                          {"band": "TWO", "attenuationFactor": 2},
+                          {"band": "FIVE", "attenuationFactor": 3.25},
+                          {"band": "SIX", "attenuationFactor": 4}]}
+        self.files["attenuationAreaTypes.json"] = {"attenuationAreaTypes": [definition]}
+        self.files["attenuationAreas.json"] = {"attenuationAreas": [
+            {"floorPlanId": "floor-1", "attenuationAreaTypeId": "type-a",
+             "area": [{"x": 10, "y": 20}, {"x": 30, "y": 20}, {"x": 30, "y": 40}]}]}
+        return definition
+
+    def test_attenuation_polygon_material_and_source_values(self):
+        definition = self.add_attenuation_fixture()
+        floor = self.convert("--prefix", "Test: ")["floorplans"][0]
+        area = floor["attenuation_areas"][0]
+        self.assertEqual(area["area"]["coordinates"], [
+            {"coordinate_xyz": {"x": x, "y": y, "z": 0.0, "unit": "pixels"}}
+            for x, y in ((10, 60), (30, 60), (30, 40))])
+        self.assertEqual(area["area_material"], {
+            "name": "Test: Test volume", "display_color": "#123456",
+            "bottom_height": 1.2, "top_height": 4.5,
+            "rf_properties": {"attenuation_per_m": 3.2},
+            "oiconvert_source": {"version": 1, "attenuation_area_type":
+                                 {k: v for k, v in definition.items() if k != "id"}}})
+        self.assertNotIn("thickness_m", area["area_material"])
+        self.assertEqual(floor["coverage_areas"], [])
+
+    def test_attenuation_missing_bounds_and_loss_are_not_invented(self):
+        definition = self.add_attenuation_fixture()
+        for key in ("lowerEdge", "upperEdge", "propagationProperties"):
+            definition.pop(key)
+        material = self.convert()["floorplans"][0]["attenuation_areas"][0]["area_material"]
+        for key in ("bottom_height", "top_height", "rf_properties"):
+            self.assertNotIn(key, material)
+
+    def test_attenuation_deleted_and_empty_inputs_add_nothing(self):
+        for items in ([], [{"status": "DELETED"}]):
+            self.files["attenuationAreas.json"] = {"attenuationAreas": items}
+            self.assertNotIn("attenuation_areas", self.convert()["floorplans"][0])
+
+    def test_attenuation_unknown_floor_or_material_is_rejected(self):
+        for field in ("floorPlanId", "attenuationAreaTypeId"):
+            self.add_attenuation_fixture()
+            self.files["attenuationAreas.json"]["attenuationAreas"][0][field] = "unknown"
+            self.convert(success=False)
+        self.add_attenuation_fixture()["status"] = "DELETED"
+        self.convert(success=False)
+
+    def test_attenuation_invalid_geometry_loss_height_and_color(self):
+        for field, value in (("lowerEdge", -1), ("upperEdge", 0.5),
+                             ("upperEdge", float("nan")), ("color", "red"),
+                             ("propagationProperties", [{"band": "FIVE", "attenuationFactor": True}]),
+                             ("propagationProperties", [{"band": "FIVE", "attenuationFactor": -1}])):
+            with self.subTest(field=field):
+                self.add_attenuation_fixture()[field] = value
+                self.convert(success=False)
+        for points in ([], [{"x": True, "y": 2}] * 3, [{"x": 1, "y": float("inf")}] * 3):
+            self.add_attenuation_fixture()
+            self.files["attenuationAreas.json"]["attenuationAreas"][0]["area"] = points
+            self.convert(success=False)
+
+    def test_attenuation_goes_only_on_its_referenced_floor(self):
+        self.add_attenuation_fixture()
+        self.files["floorPlans.json"]["floorPlans"].append({"id": "floor-2", "name": "Upper"})
+        self.files["attenuationAreas.json"]["attenuationAreas"][0]["floorPlanId"] = "floor-2"
+        floors = self.convert()["floorplans"]
+        self.assertNotIn("attenuation_areas", floors[0])
+        self.assertEqual(len(floors[1]["attenuation_areas"]), 1)
 
     def test_unplaced_aps_have_no_invented_floor_or_empty_coordinates(self):
         for location in (None, {}, {"floorPlanId": "unknown"}):

@@ -240,21 +240,100 @@ def load_coverage_areas(z, floor_ids):
     return areas
 
 
+def pixel_polygon(points, img_h):
+    # All polygon geometry uses the same pixel origin as walls and AP positions.
+    return {"coordinates": [
+        {"coordinate_xyz": {"x": float(p["x"]), "y": float(img_h) - float(p["y"]),
+                            "z": 0.0, "unit": "pixels"}} for p in points]}
+
+
 def build_coverage_for_floor(items, img_h):
-    # Coverage geometry uses the same pixel origin as walls and AP positions.
-    return [{
-        "area": {"coordinates": [
-            {"coordinate_xyz": {"x": float(p["x"]), "y": float(img_h) - float(p["y"]),
-                                "z": 0.0, "unit": "pixels"}}
-            for p in points
-        ]},
-        "exclusion": exclusion,
-    } for points, exclusion in items]
+    return [{"area": pixel_polygon(points, img_h), "exclusion": exclusion}
+            for points, exclusion in items]
 
 
-def build_floor_objects(z, esx_floors, wall_segments, wall_points, id2pref, proj_prefix, meters_per_unit, project_name):
+def load_attenuation_areas(z, floor_ids, prefix):
+    """Read RF volumes separately from coverage polygons."""
+    if "attenuationAreas.json" not in z.namelist():
+        return {}
+    items = read_json_from_zip(z, "attenuationAreas.json")["attenuationAreas"]
+    active = [a for a in items if a.get("status") != "DELETED"]
+    if not active:
+        return {}
+    types = {}
+    for definition in read_json_from_zip(z, "attenuationAreaTypes.json")["attenuationAreaTypes"]:
+        if definition.get("status") != "DELETED":
+            key = definition.get("id")
+            if not isinstance(key, str) or not key or key in types:
+                die("Invalid or duplicate attenuation area type ID")
+            types[key] = definition
+    result = {}
+    for item in active:
+        fid = item.get("floorPlanId")
+        if fid not in floor_ids:
+            die("Attenuation area references unknown floor")
+        points = item.get("area")
+        if not isinstance(points, list) or len(points) < 3 or any(
+            not isinstance(p, dict) or any(type(p.get(axis)) not in (int, float)
+            or not math.isfinite(p[axis]) for axis in ("x", "y")) for p in points
+        ):
+            die("Invalid attenuation area coordinates")
+        definition = types.get(item.get("attenuationAreaTypeId"))
+        if definition is None:
+            die("Attenuation area references missing or deleted type")
+        material = {"name": prefix + (definition.get("name") or definition.get("key") or "Attenuation area")}
+        color = definition.get("color")
+        if color is not None:
+            if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+                die("Invalid attenuation area color")
+            material["display_color"] = color
+        for source, target in (("lowerEdge", "bottom_height"), ("upperEdge", "top_height")):
+            if source in definition:
+                value = definition[source]
+                if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                    die("Invalid attenuation area height")
+                material[target] = value
+        if material.get("top_height", math.inf) < material.get("bottom_height", 0):
+            die("Attenuation area top height is below bottom height")
+        props = definition.get("propagationProperties", [])
+        if not isinstance(props, list):
+            die("Invalid attenuation area propagation properties")
+        values = {}
+        for prop in props:
+            if not isinstance(prop, dict):
+                die("Invalid attenuation area propagation record")
+            band, value = prop.get("band"), prop.get("attenuationFactor")
+            if band not in ("TWO", "FIVE", "SIX"):
+                continue
+            if band in values or type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                die("Invalid or duplicate attenuation area loss")
+            values[band] = value
+        for band in ("FIVE", "TWO", "SIX"):
+            if band in values:
+                material["rf_properties"] = {"attenuation_per_m": round1(values[band])}
+                if len(set(values.values())) > 1:
+                    info("Band-dependent area loss: OI scalar uses 5/2.4/6 GHz preference; originals retained")
+                break
+        # Retain per-band loss and source fields which scalar OI material cannot express.
+        material["oiconvert_source"] = {"version": 1, "attenuation_area_type":
+            {k: v for k, v in definition.items() if k not in ("id", "status")}}
+        try:
+            json.dumps(material, allow_nan=False)
+        except (ValueError, TypeError):
+            die("Invalid non-JSON attenuation area metadata")
+        result.setdefault(fid, []).append((points, material))
+    return result
+
+
+def build_attenuation_for_floor(items, img_h):
+    return [{"area": pixel_polygon(points, img_h),
+             "area_material": material} for points, material in items]
+
+
+def build_floor_objects(z, esx_floors, wall_segments, wall_points, id2pref, proj_prefix, meters_per_unit, project_name, material_prefix="[Imported] "):
     floors_out, images, floor_img_h = [], {}, {}
     coverage = load_coverage_areas(z, {f["id"] for f in esx_floors})
+    attenuation = load_attenuation_areas(z, {f["id"] for f in esx_floors}, material_prefix)
     for f in esx_floors:
         name = f.get("name") or "Floor"
         target_w = int(round(f.get("width") or f.get("cropMaxX") or 0))
@@ -286,6 +365,8 @@ def build_floor_objects(z, esx_floors, wall_segments, wall_points, id2pref, proj
         # segment if it is present (minItems: 1).
         if not floors_out[-1]["wall_segments"]:
             del floors_out[-1]["wall_segments"]
+        if attenuation.get(f.get("id")):
+            floors_out[-1]["attenuation_areas"] = build_attenuation_for_floor(attenuation[f["id"]], h)
         images[image_rel] = png_bytes
         floor_img_h[f.get("id")] = h
     return floors_out, images, floor_img_h
@@ -509,7 +590,7 @@ def main():
     proj_prefix = sanitize_filename(project_title)
 
     materials, id2pref = build_wall_materials(wall_types, wall_segs, args.prefix, args.all_materials)
-    floors_out, images, floor_img_h = build_floor_objects(z, esx_floors, wall_segs, wall_pts, id2pref, proj_prefix, meters_per_unit, project_title)
+    floors_out, images, floor_img_h = build_floor_objects(z, esx_floors, wall_segs, wall_pts, id2pref, proj_prefix, meters_per_unit, project_title, args.prefix)
 
     floor_name_by_id = {f["id"]: (f.get("name") or "Floor") for f in esx_floors}
     floor_dims_by_name = {f["name"]: (f["dimensions"][0]["width"], f["dimensions"][0]["length"]) for f in floors_out}
