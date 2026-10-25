@@ -94,7 +94,6 @@ Options (excerpt):
 - AP antennas: models, patterns and per-radio antenna configuration
 - AP installation: mounting type, azimuth/rotation, tilt and per-radio height differences
 - AP metadata: notes, tags and other source properties, subject to OpenIntent representation and importer support
-- Attenuation areas (types + polygons)
 - Reference/scale markers
 - Notes & picture notes (image annotations)
 - Survey results (measured heatmaps / AP placements)
@@ -158,3 +157,31 @@ the RF-chain count. Power conversion has schema and synthetic regression coverag
 confirmed live Hamina import of the tested planned-radio powers, with differences
 below 0.05 dB from the source total conducted values, consistent with integer
 per-chain dBm quantization. This does not establish support for every model or importer.
+
+## Attenuation areas
+
+Optional `attenuationAreas.json` polygons and referenced active definitions from
+`attenuationAreaTypes.json` map to standard floor `attenuation_areas`, separately
+from coverage inclusions/exclusions. Polygon vertices use pixels with the same
+Y flip as walls and APs. Material names use `--prefix`; source colors and explicit
+`lowerEdge`/`upperEdge` become `display_color`, `bottom_height` and `top_height`
+in metres. Missing bounds remain absent rather than inventing a ceiling height.
+
+Ekahau attenuation areas use loss per metre, as described in
+[Aruba's Ekahau planning guide](https://community.networking.hpe.com/blogs/wifiandrew1/2020/10/19/ekahau-wi-fi-tools-network-planning-with-aruba-access-points).
+The source `attenuationFactor` maps to `rf_properties.attenuation_per_m`, rounded
+to one decimal like existing wall materials. No flat loss or artificial thickness
+is added. OI material loss is scalar: use 5 GHz, otherwise 2.4 GHz, otherwise
+6 GHz, with a diagnostic when source band values differ. Absent loss stays absent.
+
+Full source type fields (excluding record ID/status), including per-band loss,
+reflection and diffraction, remain in material
+`oiconvert_source.attenuation_area_type` (`version: 1`). This is a nonstandard
+preservation extension; it does not make those RF properties standard OI fields.
+Deleted areas are omitted. Active areas require a known floor, a valid polygon
+and an active type. Losses and explicit heights must be finite and nonnegative;
+top height must not be below bottom height. Unused types are not exported.
+
+Schema and private geometry/material checks do not establish destination RF
+simulation equivalence. Live import, especially absent top heights and material
+loss handling, still needs verification.
