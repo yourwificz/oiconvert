@@ -4,8 +4,103 @@
 A toolkit for conversions targeting the OpenIntent 2.0.2 standard.
 
 - `esx2oi.py` — Ekahau **.esx → OpenIntent 2.0.2** ZIP (tested primarily with Hamina)
+- `oi2esx.py` — experimental OpenIntent **2.0.1/2.0.2 → .esx** geometry writer; live open/save checks passed in Ekahau AI Pro 11.9.1.1
 
 Contributions & test reports welcome.
+
+## oi2esx — first geometry milestone (experimental)
+
+Creates a **new** ESX archive using the record structure observed in Ekahau
+schema 1.9.0 projects. It does not update an original ESX. Automated geometry
+checks do **not** establish that Ekahau accepts the output or that RF predictions
+match. Live open/save checks have passed for the samples described below;
+other projects and versions still require application testing.
+
+**Live validation (Ekahau AI Pro 11.9.1.1):** the maintainer opened and resaved
+a two-floor conversion with 1,007 walls, inclusion/exclusion areas and six
+attenuation areas across four types. Comparison confirmed preserved geometry,
+material values, explicit heights and embedded images. A separate native
+Hamina four-floor design with 2,702 walls, 12 prefixed material types and six
+coverage polygons also survived open/save with those records unchanged. One
+floor scale changed only in its final floating-point digit. Ekahau reordered
+material bands, removed empty files and added built-in attenuation types in
+projects without source types. These observations establish open/save behavior
+for the tested samples, not RF simulation equivalence or an independently
+confirmed close/reopen check. Private project files are not included.
+
+Use a complete repository checkout (the pinned schema currently lives under
+`tests/fixtures/oi-wifi.schema.json`):
+
+```bash
+python3 -m pip install -r /absolute/path/oiconvert/requirements.txt
+python3 /absolute/path/oiconvert/oi2esx.py \
+  --oi /absolute/path/design.zip \
+  --out /absolute/path/new-design.esx \
+  --geometry-only
+```
+
+The output ESX and adjacent `new-design.esx.report.json` must not already exist.
+The report lists converted object counts, omitted objects and assumptions.
+No source ESX, template or model library is required for this geometry milestone.
+The minimal project structure was derived from existing Ekahau files; no source
+history, survey data, notes, identities or unrelated images are copied.
+
+**Supported:** embedded PNG/JPEG floor maps; physical scale; wall segments and
+custom materials; coverage inclusion/exclusion polygons; attenuation polygons,
+scalar per-metre loss, color and explicit top/bottom heights. Same-named types
+with different properties receive different IDs; identical definitions share a
+type. Missing attenuation-area heights remain absent. Material names default to
+the `[Imported] ` prefix, without adding it twice to already-prefixed names.
+Override with `--prefix "Custom: "` or disable it with `--prefix ""`.
+
+Missing coverage inclusion polygons are reported and do not generate areas by
+default. `--full-floor-coverage` explicitly adds a full-map rectangle only on
+floors without source inclusion polygons; source exclusions remain intact.
+These areas are named `Full-map coverage (fallback)` with the configured prefix
+and listed in `synthesized_coverage`. They are synthetic map extents, **not**
+reconstructed building outlines or recovered Hamina coverage boundaries.
+
+Hamina may repeat each polygon vertex in pixels, metres and feet. Complete unit
+streams are compared in vertex order, then a single representation is selected
+(pixels, otherwise metres, otherwise feet). Export rounding is tolerated within
+2 mm absolute or 0.002% relative error per coordinate. Incomplete or contradictory
+unit streams are rejected; arbitrary mixtures of units across distinct vertices
+are not interpreted as redundant representations. This applies to coverage,
+exclusion and attenuation polygons.
+
+**Explicit limitations:**
+
+- APs/radios/antennas and switches are not generated. Inputs containing devices
+  require `--geometry-only`; otherwise conversion fails. The report counts omissions.
+- Buildings and nonzero floor rotations are rejected. Reference markers, floor
+  holes, closets and survey paths are omitted and counted when present.
+  For local geometry testing, `--ignore-floor-rotation` explicitly omits rotation
+  metadata while retaining the image and its local geometry. Each omitted floor
+  rotation is listed in `omitted_floor_rotations`; inter-floor alignment is not
+  preserved. The default still rejects nonzero rotation; this option does not
+  bypass building-transform rejection.
+  Standalone floor `building_name` labels (without a top-level building object)
+  are omitted and listed in `omitted_building_labels`; floors remain independent.
+- Floor ceiling heights are not imported. Coverage uses a new empty requirement
+  profile; configure the intended criteria in Ekahau.
+- OI scalar attenuation is applied equally to 2.4/5/6 GHz. Reflection/diffraction
+  use provisional values observed in Ekahau samples: wall 0.25/11, area 0.5/11.
+  These values do not establish simulation equivalence. Source preservation
+  extensions are not restored in this milestone, so they cannot override OI edits.
+- Walls require explicit pixel dimensions and positive physical thickness. Flat
+  loss can be converted to per-metre loss only when that thickness is supplied.
+  Contradictory flat/per-metre losses are rejected (0.11 dB rounding tolerance).
+- Physical dimensions must imply a uniform scale; image/pixel dimensions must
+  match. No geometry is clamped or rescaled to hide inconsistent input. Cartesian
+  polygon coordinates may use pixels/metres/feet; elevated polygons are rejected.
+- Remote map URIs, unsafe paths, ambiguous OI documents, duplicate ZIP names,
+  duplicate JSON keys and nonfinite JSON numbers are rejected. ZIP contents are
+  limited to 512 MiB uncompressed.
+
+Native Hamina test exports declare 2.0.1. Both accepted version strings are
+validated against the repository's pinned **2.0.2** schema; this is not a claim
+of complete support for every property in either version. Generated reports mark
+each new output as unverified until that file receives its own application check.
 
 # esx2oi — Ekahau .esx → OpenIntent 2.0.2
 
