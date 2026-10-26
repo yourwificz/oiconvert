@@ -1,2 +1,1 @@
-Pillow
-jsonschema>=4.18,<5
+-r requirements.txt
