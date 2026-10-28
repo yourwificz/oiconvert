@@ -1,14 +1,18 @@
 # oiconvert
 
+[![OpenIntent schema 2.0.2](https://img.shields.io/badge/OpenIntent_schema-2.0.2-blue)](#compatibility-and-live-validation)
+[![Ekahau 11.9.1 open/save tested](https://img.shields.io/badge/Ekahau_11.9.1-open%2Fsave_tested-green)](#compatibility-and-live-validation)
+[![Ekahau 11.9.4 open/save tested](https://img.shields.io/badge/Ekahau_11.9.4-open%2Fsave_tested-green)](#compatibility-and-live-validation)
+
 ## About oiconvert
 A toolkit for conversions targeting the OpenIntent 2.0.2 standard.
 
 - `esx2oi.py` — Ekahau **.esx → OpenIntent 2.0.2** ZIP (tested primarily with Hamina)
-- `oi2esx.py` — experimental OpenIntent **2.0.1/2.0.2 → .esx** geometry writer; live open/save checks passed in Ekahau AI Pro 11.9.1.1
+- `oi2esx.py` — experimental OpenIntent **2.0.1/2.0.2 → .esx** geometry and opt-in building writer; live open/save checks passed in Ekahau AI Pro 11.9.1.1 and 11.9.4.1
 
 Contributions & test reports welcome.
 
-## oi2esx — first geometry milestone (experimental)
+## oi2esx — geometry and buildings (experimental)
 
 Creates a **new** ESX archive using the record structure observed in Ekahau
 schema 1.9.0 projects. It does not update an original ESX. Automated geometry
@@ -27,6 +31,24 @@ material bands, removed empty files and added built-in attenuation types in
 projects without source types. These observations establish open/save behavior
 for the tested samples, not RF simulation equivalence or an independently
 confirmed close/reopen check. Private project files are not included.
+
+### Compatibility and live validation
+
+Badges describe the tested samples and operations below, not complete format
+support or RF simulation equivalence.
+
+| Target or application | Verified scope |
+| --- | --- |
+| OpenIntent 2.0.2 schema | Pinned validation schema; accepted inputs declare 2.0.1 or 2.0.2. Only the documented subset is converted. |
+| Hamina Network Planner | Native 2.0.1 exports exercised maps, scale, walls/materials, coverage polygons, building labels and exported floor heights. |
+| Ekahau AI Pro 11.9.1.1 | Geometry samples above, plus a four-floor building: order B01 → F01 → F02 → F03; heights 2.5 / 3.5 / 2.5 / 2.5 m; Office (US) slabs at 30 dB/m and 0.5 m. Building values confirmed in the UI and retained on save. |
+| Ekahau AI Pro 11.9.4.1 | The same building sample opened and resaved; checked geometry, scale, building links, heights, slab properties and embedded images were retained. |
+
+The maintainer also manually aligned F01 and F02 in Ekahau 11.9.4.1. The saved
+file added three shared reference points while retaining the floor geometry and
+scale. This documents native ESX alignment storage; **oi2esx does not generate
+alignment**. Independent close/reopen checks and equivalent RF predictions have
+not been established. Private input and saved project files are not distributed.
 
 Use a complete repository checkout (the pinned schema currently lives under
 `tests/fixtures/oi-wifi.schema.json`):
@@ -72,16 +94,17 @@ exclusion and attenuation polygons.
 
 - APs/radios/antennas and switches are not generated. Inputs containing devices
   require `--geometry-only`; otherwise conversion fails. The report counts omissions.
-- Buildings and nonzero floor rotations are rejected. Reference markers, floor
+- Top-level OI building objects and nonzero floor rotations are rejected. Reference markers, floor
   holes, closets and survey paths are omitted and counted when present.
   For local geometry testing, `--ignore-floor-rotation` explicitly omits rotation
   metadata while retaining the image and its local geometry. Each omitted floor
   rotation is listed in `omitted_floor_rotations`; inter-floor alignment is not
   preserved. The default still rejects nonzero rotation; this option does not
   bypass building-transform rejection.
-  Standalone floor `building_name` labels (without a top-level building object)
-  are omitted and listed in `omitted_building_labels`; floors remain independent.
-- Floor ceiling heights are not imported. Coverage uses a new empty requirement
+  By default, standalone floor `building_name` labels are omitted and listed in
+  `omitted_building_labels`; see the experimental building option below.
+- Floor ceiling heights are not imported unless experimental building import is
+  enabled for their building. Coverage uses a new empty requirement
   profile; configure the intended criteria in Ekahau.
 - OI scalar attenuation is applied equally to 2.4/5/6 GHz. Reflection/diffraction
   use provisional values observed in Ekahau samples: wall 0.25/11, area 0.5/11.
@@ -101,6 +124,55 @@ Native Hamina test exports declare 2.0.1. Both accepted version strings are
 validated against the repository's pinned **2.0.2** schema; this is not a claim
 of complete support for every property in either version. Generated reports mark
 each new output as unverified until that file receives its own application check.
+
+### Experimental building grouping and heights
+
+`--building-order /absolute/path/building-order.json` enables a small building
+writer for floorplans carrying `building_name` labels. It creates linked
+`buildings`, `buildingFloors` and `floorTypes` records. The JSON must list every
+labeled building and every member floor exactly once, in **bottom-to-top** order:
+
+```json
+{"Main Building": ["Basement", "Ground", "Upper"]}
+```
+
+The order is explicitly supplied; it is not recovered from the OI export,
+inferred from floor names, or taken from array order. ESX `floorNumber` values
+are sequential zero-based stack indices; the original floorplan names remain
+unchanged. Unlabeled maps stay independent. Top-level OI `building` objects and
+their transforms remain unsupported, even with this option.
+
+Floor height is read from `dimensions[].height`, preferring metres, then feet,
+then pixels converted using the map scale. Other supplied representations must
+agree within export rounding tolerance. Missing, nonpositive or contradictory
+heights cause conversion to fail. Height is stored separately from slab thickness.
+
+Because standard OI 2.0.2 has no dedicated slab-material/thickness properties,
+this first building writer uses the confirmed native Ekahau fallback:
+
+- **Office (US)**, native key `FloorTypes.OfficeUS`, shared across imported floors.
+- **30 dB/m** attenuation in 2.4/5/6 GHz; reflection 0.5, diffraction 11.
+- **0.5 m** slab thickness, giving **15 dB** attenuation for a perpendicular path.
+
+These are destination defaults, not imported source RF data. The report records
+them together with the chosen order and imported heights under `building_import`.
+Floor alignment, reference markers and building transforms are **not** imported;
+align the maps in Ekahau before using multi-floor RF predictions. Nonzero floor
+rotations still require explicit `--ignore-floor-rotation` for this local-coordinate
+test. APs/radios remain unsupported. Building open/save validation is recorded in
+the compatibility table above; it does not establish equivalent multi-floor
+predictions.
+
+Hamina's [OpenIntent support matrix](https://docs.hamina.com/hamina/live/openintent)
+marks floor alignment as unsupported for both export and import. Our test exports
+contain no alignment reference markers or building transforms. The matrix also
+marks floor height unsupported; the tested files nevertheless contain
+`dimensions[].height`, which this option reads as described above. This is not
+evidence that complete building height semantics survive Hamina interchange.
+
+Separately, OpenIntent 2.0.2 can describe building objects and floor transforms;
+**this converter does not yet support them**. Their implementation is deferred
+until suitable application validation is available.
 
 # esx2oi — Ekahau .esx → OpenIntent 2.0.2
 
