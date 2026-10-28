@@ -247,8 +247,77 @@ def build_type(material, kind, warnings, prefix="[Imported] "):
     return output
 
 
+def building_height(source, floor):
+    """Read height independently of slab thickness; never infer it from APs."""
+    heights = {}
+    for dimension in source["dimensions"]:
+        if "height" in dimension:
+            unit = dimension["unit"]
+            factor = {"meters": 1, "feet": 1 / FEET_PER_METER,
+                      "pixels": floor["metersPerUnit"]}[unit]
+            heights[unit] = number(dimension["height"],
+                f"Floor {source['name']} height", positive=True) * factor
+    preferred = next((heights[u] for u in ("meters", "feet", "pixels") if u in heights), None)
+    if preferred is None:
+        raise ConversionError(f"Floor {source['name']}: building import requires a floor height")
+    if any(not math.isclose(h, preferred, abs_tol=0.002, rel_tol=2e-5)
+           for h in heights.values()):
+        raise ConversionError(f"Floor {source['name']}: inconsistent height representations")
+    return preferred
+
+
+def build_buildings(sources, floors, order, lists):
+    """Explicit ordering supplies information absent from native Hamina OI."""
+    if not isinstance(order, dict) or not order:
+        raise ConversionError("Building order must be a nonempty object of building names to floor lists")
+    grouped = {}
+    for source in sources:
+        name = source.get("building_name")
+        if name:
+            grouped.setdefault(name, set()).add(source["name"])
+    if set(grouped) != set(order):
+        raise ConversionError("Building order must cover exactly the source building labels")
+    floor_by_name = {f["name"]: f for f in floors}
+    source_by_name = {s["name"]: s for s in sources}
+    for name, names in order.items():
+        if (not isinstance(name, str) or not name.strip() or not isinstance(names, list)
+                or not names or any(not isinstance(n, str) or not n.strip() for n in names)):
+            raise ConversionError("Each building requires a nonblank name and a list of floor names")
+        if len(set(names)) != len(names) or set(names) != grouped[name]:
+            raise ConversionError(f"Building {name}: list every member floor exactly once")
+    # Verified in the supplied native Ekahau ESX and its material picker.
+    # 30 dB/m * 0.5 m = 15 dB for a perpendicular ray, not 30 dB total.
+    slab = record(key="FloorTypes.OfficeUS", name="Office (US)", isDefault=True,
+                  propagationProperties=[{"band": band, "attenuationFactor": 30.0,
+                    "reflectionCoefficient": 0.5, "diffractionCoefficient": 11.0}
+                    for band in ("TWO", "FIVE", "SIX")])
+    lists["floorTypes"].append(slab)
+    imported = []
+    for name, names in order.items():
+        building = record(name=name, tags=[])
+        lists["buildings"].append(building)
+        summary = {"name": name, "floors_bottom_to_top": []}
+        for index, floor_name in enumerate(names):
+            floor = floor_by_name[floor_name]
+            height = building_height(source_by_name[floor_name], floor)
+            lists["buildingFloors"].append(record(floorPlanId=floor["id"],
+                buildingId=building["id"], floorTypeId=slab["id"],
+                floorNumber=index, height=height, thickness=0.5))
+            summary["floors_bottom_to_top"].append({"floorplan": floor_name,
+                "floor_number": index, "height_m": height})
+        imported.append(summary)
+    return {"mode": "experimental-explicit-order", "buildings": imported,
+            "floor_number_semantics": "zero-based stack indices, not source level labels",
+            "slab_defaults": {"material": "Office (US)", "thickness_m": 0.5,
+                "attenuation_db_per_m": 30.0, "perpendicular_loss_db": 15.0,
+                "bands": ["TWO", "FIVE", "SIX"], "source": "Ekahau default, not OpenIntent data"},
+            "height_interpretation": "exported floor height; slab thickness stored separately",
+            "alignment": "not imported; verify and align floorplans in Ekahau"}
+
+
 def build_esx(oi, archive, *, geometry_only=False, ignore_floor_rotation=False,
-              title="OpenIntent import", prefix="[Imported] ", full_floor_coverage=False):
+              title="OpenIntent import", prefix="[Imported] ", full_floor_coverage=False,
+              building_order=None):
     omitted = {"accesspoints": len(oi.get("accesspoints", [])),
                "switches": len(oi.get("switches", []))}
     if any(omitted.values()) and not geometry_only:
@@ -256,7 +325,7 @@ def build_esx(oi, archive, *, geometry_only=False, ignore_floor_rotation=False,
                               "to explicitly omit them")
     if oi.get("building"):
         raise ConversionError("Building transforms are not supported yet")
-    warnings = {"Experimental ESX schema 1.9.0 output: Ekahau open/save/reopen is not yet verified"}
+    warnings = {"Experimental ESX schema 1.9.0 output: this generated file requires its own Ekahau application check"}
     lists = {key: [] for key in (
         "floorPlans", "images", "wallTypes", "wallPoints", "wallSegments",
         "areas", "exclusionAreas", "attenuationAreas", "attenuationAreaTypes",
@@ -303,7 +372,7 @@ def build_esx(oi, archive, *, geometry_only=False, ignore_floor_rotation=False,
                                       "rotation": source["rotation"]})
             warnings.add("Nonzero floor rotations were explicitly omitted; local image coordinates "
                          "are retained and inter-floor alignment is not preserved")
-        if source.get("building_name"):
+        if source.get("building_name") and building_order is None:
             omitted_building_labels.append({"floorplan": source["name"],
                                             "building_name": source["building_name"]})
             warnings.add("Building labels were omitted; floorplans are imported independently")
@@ -313,7 +382,8 @@ def build_esx(oi, archive, *, geometry_only=False, ignore_floor_rotation=False,
         for key in ("reference_markers", "holes_in_floor", "closets", "survey_paths"):
             if source.get(key):
                 omitted[key] = omitted.get(key, 0) + len(source[key])
-        if any("height" in d for d in source["dimensions"]):
+        if (any("height" in d for d in source["dimensions"])
+                and (building_order is None or not source.get("building_name"))):
             warnings.add("Floor ceiling heights are not imported in this geometry milestone")
         for segment in source.get("wall_segments", []):
             if segment["wall_type"] not in materials:
@@ -376,21 +446,31 @@ def build_esx(oi, archive, *, geometry_only=False, ignore_floor_rotation=False,
     if lists["wallTypes"] or lists["attenuationAreaTypes"]:
         warnings.add("Scalar OI attenuation is applied to all three bands; RF equivalence is not established")
         warnings.add("Reflection/diffraction use provisional Ekahau sample defaults (wall 0.25/11, area 0.5/11)")
+    building_report = None
+    if building_order is not None:
+        building_report = build_buildings(oi["floorplans"], lists["floorPlans"], building_order, lists)
+        warnings.add("Building floor order is explicitly supplied, not recovered from the export")
+        warnings.add("Slabs use the Ekahau Office (US) fallback: 30 dB/m, 0.5 m, all bands; "
+                     "these are not imported RF properties")
+        warnings.add("Building import is experimental; floor alignment is not imported and building RF equivalence "
+                     "requires application verification")
     output = {key + ".json": {key: value} for key, value in lists.items()}
     output["project.json"] = {"project": project}
     output["projectConfiguration.json"] = {"projectConfiguration": config}
-    report = {"status": "experimental-unverified-in-ekahau", "scope": "geometry-only",
+    report = {"status": "experimental-unverified-in-ekahau",
+              "scope": "geometry-with-buildings" if building_report else "geometry-only",
               "counts": {k: len(v) for k, v in lists.items() if v},
               "omitted": {k: v for k, v in omitted.items() if v},
               "omitted_floor_rotations": omitted_rotations,
               "omitted_building_labels": omitted_building_labels,
               "synthesized_coverage": synthesized_coverage,
+              "building_import": building_report,
               "warnings": sorted(warnings)}
     return output, binaries, report
 
 
 def convert(source, destination, *, geometry_only=False, ignore_floor_rotation=False,
-            prefix="[Imported] ", full_floor_coverage=False):
+            prefix="[Imported] ", full_floor_coverage=False, building_order=None):
     source, destination = Path(source), Path(destination)
     if source.resolve() == destination.resolve():
         raise ConversionError("Input and output paths must differ")
@@ -404,6 +484,7 @@ def convert(source, destination, *, geometry_only=False, ignore_floor_rotation=F
         output, binaries, report = build_esx(oi, archive, geometry_only=geometry_only,
                                             ignore_floor_rotation=ignore_floor_rotation,
                                             prefix=prefix, full_floor_coverage=full_floor_coverage,
+                                            building_order=building_order,
                                             title=source.stem)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
@@ -450,11 +531,17 @@ def main():
     parser.add_argument("--full-floor-coverage", action="store_true",
                         help="Explicitly add a full-map rectangle on floors without inclusion "
                              "polygons; preserve source exclusions and report synthesized areas")
+    parser.add_argument("--building-order", help="Enable experimental buildings using a JSON "
+                        "object mapping each source building name to its floor names, bottom to top")
     args = parser.parse_args()
     try:
+        building_order = parse_json(Path(args.building_order).read_text()) if args.building_order else None
+        if args.building_order and not isinstance(building_order, dict):
+            raise ConversionError("Building order file must contain an object")
         report = convert(args.oi, args.out, geometry_only=args.geometry_only,
                          ignore_floor_rotation=args.ignore_floor_rotation,
-                         prefix=args.prefix, full_floor_coverage=args.full_floor_coverage)
+                         prefix=args.prefix, full_floor_coverage=args.full_floor_coverage,
+                         building_order=building_order)
     except (ConversionError, OSError, zipfile.BadZipFile, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

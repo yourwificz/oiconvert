@@ -297,6 +297,99 @@ class GeometryTests(unittest.TestCase):
         with self.assertRaisesRegex(oi2esx.ConversionError, "Building transforms"):
             self.convert(ignore_floor_rotation=True)
 
+    def add_building_floors(self):
+        self.floor["building_name"] = "Main"
+        self.floor["dimensions"][0]["height"] = 25
+        self.floor["dimensions"][1]["height"] = 2.5
+        upper = copy.deepcopy(self.floor)
+        upper["name"] = "Upper"
+        upper["dimensions"][0]["height"] = 35
+        upper["dimensions"][1]["height"] = 3.5
+        self.oi["floorplans"].append(upper)
+        return upper
+
+    def test_explicit_building_order_links_floors_heights_and_native_slab_defaults(self):
+        self.add_building_floors()
+        files, report = self.convert(building_order={"Main": ["Upper", "Ground"]})
+        self.assertEqual(files["buildings"][0]["name"], "Main")
+        names = {f["id"]: f["name"] for f in files["floorPlans"]}
+        levels = files["buildingFloors"]
+        self.assertEqual([(names[r["floorPlanId"]], r["floorNumber"], r["height"])
+                          for r in levels], [("Upper", 0, 3.5), ("Ground", 1, 2.5)])
+        slab = files["floorTypes"][0]
+        self.assertEqual(slab["name"], "Office (US)")
+        self.assertEqual(slab["key"], "FloorTypes.OfficeUS")
+        self.assertTrue(slab["isDefault"])
+        self.assertEqual({p["band"]: p["attenuationFactor"] for p in slab["propagationProperties"]},
+                         {"TWO": 30, "FIVE": 30, "SIX": 30})
+        for level in levels:
+            self.assertEqual(level["floorTypeId"], slab["id"])
+            self.assertEqual(level["buildingId"], files["buildings"][0]["id"])
+            self.assertEqual(level["thickness"], 0.5)
+        self.assertEqual(report["building_import"]["slab_defaults"]["perpendicular_loss_db"], 15)
+        self.assertEqual(report["omitted_building_labels"], [])
+        self.assertFalse(any("ceiling heights are not imported" in w for w in report["warnings"]))
+
+    def test_building_import_requires_complete_unique_membership(self):
+        self.add_building_floors()
+        for order in ({}, [], {"Other": ["Ground", "Upper"]},
+                      {"Main": ["Ground"]}, {"Main": ["Ground", "Ground"]},
+                      {"Main": ["Ground", "Unknown"]}, {"Main": "Ground"}):
+            with self.subTest(order=order):
+                with self.assertRaises(oi2esx.ConversionError):
+                    self.convert(building_order=order)
+                self.assertFalse((self.directory / "output.esx").exists())
+
+    def test_building_height_missing_or_conflicting_is_not_defaulted(self):
+        upper = self.add_building_floors()
+        for value in (None, 4, 0, True):
+            with self.subTest(height=value):
+                if value is None:
+                    upper["dimensions"][0].pop("height", None)
+                    upper["dimensions"][1].pop("height", None)
+                else:
+                    upper["dimensions"][0]["height"] = 35
+                    upper["dimensions"][1]["height"] = value
+                with self.assertRaises(oi2esx.ConversionError):
+                    self.convert(building_order={"Main": ["Ground", "Upper"]})
+                self.assertFalse((self.directory / "output.esx").exists())
+
+    def test_building_height_can_be_expressed_in_feet(self):
+        self.floor["building_name"] = "Main"
+        self.floor["dimensions"].append({"unit": "feet", "width": 32.8084,
+                                         "length": 26.24672, "height": 8.2021})
+        files, _ = self.convert(building_order={"Main": ["Ground"]})
+        self.assertAlmostEqual(files["buildingFloors"][0]["height"], 2.5)
+
+    def test_building_height_can_be_expressed_in_pixels(self):
+        self.floor["building_name"] = "Main"
+        self.floor["dimensions"][0]["height"] = 25
+        files, _ = self.convert(building_order={"Main": ["Ground"]})
+        self.assertEqual(files["buildingFloors"][0]["height"], 2.5)
+
+    def test_building_import_remains_opt_in(self):
+        self.add_building_floors()
+        files, report = self.convert()
+        self.assertEqual(files["buildings"], [])
+        self.assertEqual(files["buildingFloors"], [])
+        self.assertEqual(files["floorTypes"], [])
+        self.assertIsNone(report["building_import"])
+        self.assertEqual(len(report["omitted_building_labels"]), 2)
+
+    def test_separate_buildings_use_distinct_ids_and_share_default_slab_type(self):
+        upper = self.add_building_floors()
+        upper["building_name"] = "Annex"
+        files, _ = self.convert(building_order={"Main": ["Ground"], "Annex": ["Upper"]})
+        self.assertEqual(len(files["buildings"]), 2)
+        self.assertEqual(len({r["buildingId"] for r in files["buildingFloors"]}), 2)
+        self.assertEqual(len({r["floorTypeId"] for r in files["buildingFloors"]}), 1)
+
+    def test_top_level_building_transform_is_not_bypassed_by_order_override(self):
+        self.add_building_floors()
+        self.oi["building"] = {"name": "Main"}
+        with self.assertRaisesRegex(oi2esx.ConversionError, "Building transforms"):
+            self.convert(building_order={"Main": ["Ground", "Upper"]})
+
     def test_existing_output_and_report_are_not_overwritten(self):
         destination = self.directory / "output.esx"
         destination.write_bytes(b"keep me")
